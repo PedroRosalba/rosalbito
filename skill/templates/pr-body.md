@@ -14,7 +14,7 @@
 
 ## Decisions
 
-<one paragraph per decision record: context → options → choice and why; or "none". The records live in the local .agent/decisions/, not in this PR>
+<one paragraph per decision record: context → options → choice and why; or "none". The records live in the local .agent/context/adr/, not in this PR>
 
 ## What to look at
 
