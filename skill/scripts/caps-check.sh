@@ -10,6 +10,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 [ "${1:-}" = "--help" ] && { sed -n '2,8p' "$0"; exit 0; }
 [ -f "$STATE_FILE" ] || die "no run (no $STATE_FILE)"
 
+# a resumed run continues in a new session: record it so usage.sh finds its transcript
+SID="${CLAUDE_CODE_SESSION_ID:-}"
+if [ -n "$SID" ]; then
+  SESS="$(state_get sessions)"
+  case ",$SESS," in *",$SID,"*) ;; *) bash "$SKILL_DIR/scripts/state.sh" set sessions "${SESS:+$SESS,}$SID" >/dev/null;; esac
+fi
+
 CAPS="$(config_file caps.yaml)"
 MAX_IT="$(yaml_scalar "$CAPS" max_iterations_per_run)"; MAX_IT="${MAX_IT:-25}"
 MAX_H="$(yaml_scalar "$CAPS" max_wall_clock_hours)";    MAX_H="${MAX_H:-8}"

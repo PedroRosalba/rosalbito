@@ -31,6 +31,17 @@ iso_to_epoch() {
   fi
 }
 
+epoch_to_iso() {
+  if date -j >/dev/null 2>&1; then date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; else date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; fi
+}
+
+# cross-repo index (collect.sh, dashboard.sh): local only, never pushed anywhere
+ROSALBITO_HOME="${ROSALBITO_HOME:-$HOME/.rosalbito}"
+register_repo() {
+  mkdir -p "$ROSALBITO_HOME" 2>/dev/null || return 0
+  grep -qxF "$ROOT" "$ROSALBITO_HOME/repos" 2>/dev/null || echo "$ROOT" >> "$ROSALBITO_HOME/repos"
+}
+
 die() { echo "rosalbito: $*" >&2; exit 1; }
 
 # config lookup: repo context override first, then skill default

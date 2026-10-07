@@ -11,6 +11,7 @@
 set -uo pipefail
 WORK="${1:-$(mktemp -d)}"; mkdir -p "$WORK"; WORK="$(cd "$WORK" && pwd)"
 LOG="$WORK/.resume-test"; mkdir -p "$LOG"
+export ROSALBITO_HOME="$LOG/rosalbito-home"   # keep the scratch repo out of the real run index
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
