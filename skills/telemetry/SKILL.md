@@ -9,8 +9,9 @@ One generic capability. Per-repo knowledge is **context** (`.agent/context/telem
 never procedure. You read that context, you decide with the rules below, you verify with
 commands that exit non-zero on failure, and you write back what you learned.
 
-`SKILL_DIR` = the directory containing this file. Rosalbito's scripts are at
-`~/.claude/skills/rosalbito/scripts/` (linked by `install.sh`).
+`SKILL_DIR` = `${CLAUDE_SKILL_DIR}` — the directory containing this file. Rosalbito's scripts
+are at `SKILL_DIR/../rosalbito/scripts/` (the sibling skill, installed with this one by the
+plugin or by `install.sh`).
 
 ## When to use / when not
 
@@ -160,8 +161,8 @@ Inside a Rosalbito run (`.agent/runs/current/state.md` exists) — and whenever 
 Rosalbito skill is installed — every check runs as
 
 ```bash
-bash "~/.claude/skills/rosalbito/scripts/verify.sh" <label> <command...>
-# e.g. bash ~/.claude/skills/rosalbito/scripts/verify.sh telemetry-unit bun test test/telemetry
+bash "SKILL_DIR/../rosalbito/scripts/verify.sh" <label> <command...>
+# e.g. bash "SKILL_DIR/../rosalbito/scripts/verify.sh" telemetry-unit bun test test/telemetry
 ```
 
 so the result becomes an evidence line in `.agent/runs/<run_id>/evidence.jsonl`
