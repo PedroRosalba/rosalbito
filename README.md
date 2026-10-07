@@ -42,13 +42,20 @@ cd ~/rosalbito && ./install.sh      # symlinks the skill, registers the guard ho
 #   in Claude Code: /plugin install ralph-loop@claude-plugins-official
 ```
 
-Restart Claude Code. Then, in any repository:
+Restart Claude Code **inside the target repository** (the loop driver's Stop hook is bound
+to the session's directory). Then:
 
 ```
 /rosalbito add an integration test that runs the CLI on the sample CSV
+/rosalbito understand            # read-only pass: understanding doc + Mermaid diagrams into .agent/context/
+/rosalbito grill custody model   # interactive grilling (Matt Pocock's grilling + domain-modeling), in your session
 /rosalbito status
-/rosalbito            # resumes an interrupted run
+/rosalbito                       # resumes an interrupted run
 ```
+
+Recommended primitives (Rosalbito routes to them; `/rosalbito` stays the only entrypoint):
+`/plugin install mattpocock-skills@claude-plugins-official` for `grilling`, `domain-modeling`,
+`diagnosing-bugs`, `research`, `code-review`.
 
 Requires: Claude Code, `git`, `gh` (authenticated), `jq`, bash 3.2+ (macOS default works).
 
@@ -74,30 +81,36 @@ default even for CRITICAL work. `decision` fires only for the triggers in
 
 ```
 skill/                      the Claude Code skill (symlinked to ~/.claude/skills/rosalbito)
-  SKILL.md                  thin orchestrator (~170 lines)
+  SKILL.md                  thin orchestrator (~200 lines): dispatch, classify, loop, understand and grill modes
   config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/)
-  scripts/                  init-run, state, verify, detect-checks, classify-paths,
+  scripts/                  init-context, init-run, state, verify, detect-checks, classify-paths,
                             caps-check, start-loop, finish-run, metrics, evidence-summary
   hooks/rosalbito-guard.sh  PreToolUse hard gate
   templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md
   references/               routing, driver, reviews, understanding, reports, state-schema
-install.sh                  symlink + hook registration (idempotent, backs up settings.json)
-tests/run.sh                74 deterministic checks for scripts and the hook
-docs/                       spec, inventory, reuse-vs-build, driver decision, resume test, experiments
+skills/telemetry/           generic telemetry-engineering skill (model-invoked; symlinked to ~/.claude/skills/telemetry)
+install.sh                  symlinks + hook registration (idempotent, backs up settings.json)
+tests/run.sh                78 deterministic checks for scripts and the hook
+tests/resume-test.sh        kill-a-session-mid-run test (real model calls)
+docs/                       spec, inventory, reuse-vs-build, driver decision
 ```
 
-Inside a target repository, a run leaves:
+Inside a target repository, Rosalbito keeps an internal tree that is **never committed**
+(`init-context.sh` excludes it through `.git/info/exclude`, so the repo itself is untouched):
 
 ```
 .agent/
-  state/current.md   resume entry point      evidence/<run>.jsonl   verification results
-  acceptance/        contracts               decisions/             decision records
-  reports/           reports / blocked       understanding/         dated run artifacts
-  metrics.jsonl      one line per run
+  context/        durable — what we know about this repo
+    understanding/  diagrams/  glossary/CONTEXT.md  adr/  telemetry/  invariants.md
+  runs/           ephemeral — what happened during each run
+    current -> <run_id>/   <run_id>/{state.md, acceptance.yaml, evidence.jsonl, reports/}   metrics.jsonl
 ```
 
-Committed on the feature branch so the PR carries its own audit trail
-(`ROSALBITO_COMMIT_AGENT_DIR=0` to keep it local).
+Runs read `context/` and write `runs/`. The PR body carries the evidence table and decision
+summaries; the files stay local for Pedro and the agents. Matt Pocock's `grilling` and
+`domain-modeling` hard-code `CONTEXT.md` and `docs/adr/`; `init-context.sh` turns both into
+excluded symlinks into `context/`, so they land in the right place without the skills knowing.
+Run write-ups and experiment logs are kept locally too, not in this repository.
 
 ## Hard caps
 
@@ -108,9 +121,11 @@ with full state. Never continues indefinitely.
 ## Status
 
 Phase 1 (MVP) is implemented and tested: entrypoint + two-axis router, persistent state +
-resume protocol, deterministic verification + evidence, PR delivery, hard caps, loop driver
-(ralph-loop Stop hook), guard hook. See `docs/` for the inventory, the reuse-vs-build
-analysis, the driver decision, the resume test, and the first real experiment.
+resume protocol (validated by `tests/resume-test.sh`: a session killed mid-run was resumed by
+a fresh one from `.agent/` alone), deterministic verification + evidence, PR delivery, hard
+caps, loop driver (ralph-loop Stop hook), guard hook, understand and grill modes, and the
+generic telemetry skill. The first real run shipped a PR on a Rust payment CLI in 6.5 minutes
+with zero interruptions; the lessons from it are folded into the skill.
 Phases 2–4 (acceptance wiring, reviewer prompts, reports, metrics) exist as minimal
 templates and are only expanded against failures observed in real runs.
 

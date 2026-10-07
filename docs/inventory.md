@@ -14,6 +14,8 @@ Verified by inspection, not assumed. Re-check with `skill/scripts/detect-tools.s
 | Hooks | `~/.claude/settings.json` has PreToolUse (rtk-rewrite, safety-check) and PostToolUse (auto-push) | file read | `rosalbito-guard.sh` added by `install.sh` |
 | Existing `safety-check.sh` | reads `$CLAUDE_TOOL_INPUT`, which hooks do not receive (stdin JSON) → effectively a no-op | file read | superseded by the guard hook |
 | Existing `auto-push.sh` | pushes `~/projects` (not a repo) → effectively a no-op | file read | ignored |
+| `mattpocock-skills` plugin 1.2.3 | installed 2026-10-07 (official marketplace) | `installed_plugins.json` | primitives only: `grilling` + `domain-modeling` (grill mode, main context), `diagnosing-bugs` (debugger), `research`, `code-review` (reviewer briefs). Its `setup`/`grill-with-docs`/`grill-me` are user-invoked and hidden from the Skill tool. Hard-codes `CONTEXT.md` + `docs/adr/` → redirected by `init-context.sh` |
+| `telemetry` skill (this repo) | linked by `install.sh` | `~/.claude/skills/telemetry` | model-invoked by the implementer on telemetry-shaped tasks; reads/writes `.agent/context/telemetry/` |
 | `enor-plan` / `enor-log` | symlinked skills in `~/.claude/skills` (Enor suite) | ls | not wired; heavy planning is replaced by the understanding pass + plan section. Candidate for HIGH+ if real runs show plans are too thin |
 | `skill-creator` | synced Anthropic skill | `~/.claude/skills/synced/.../skill-creator` | conventions followed: SKILL.md < 500 lines, `scripts/`, `references/`, progressive disclosure |
 | `gh` | 2.x, logged in as PedroRosalba, scopes repo/workflow | `gh auth status` | PR creation |

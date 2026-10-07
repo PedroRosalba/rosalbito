@@ -5,7 +5,7 @@
 #   verify.sh --tail 60 <label> <command>   keep a longer output tail (default 40 lines)
 #
 # Evidence line: {"ts","run_id","iteration","label","command","exit","duration_s","output_tail"}
-# appended to .agent/evidence/<run_id>.jsonl (or .agent/evidence/adhoc.jsonl without a run).
+# appended to .agent/runs/<run_id>/evidence.jsonl (or .agent/runs/adhoc.jsonl without a run).
 # Without a .agent directory the check still runs; nothing is recorded (TRIVIAL tier).
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
@@ -27,14 +27,14 @@ EXIT=$?
 DUR=$(( $(date +%s) - START ))
 
 if [ -d "$AGENT_DIR" ]; then
-  mkdir -p "$AGENT_DIR/evidence"
-  FILE="$AGENT_DIR/evidence/$RUN_ID.jsonl"
+  mkdir -p "$RUNS_DIR"
+  if [ -f "$STATE_FILE" ]; then FILE="$EVIDENCE_FILE"; else FILE="$RUNS_DIR/adhoc.jsonl"; fi
   jq -cn --arg ts "$(now_iso)" --arg run "$RUN_ID" --arg iter "$ITER" --arg label "$LABEL" \
          --arg cmd "$CMD" --argjson exit "$EXIT" --argjson dur "$DUR" \
          --rawfile tail <(tail -n "$TAIL" "$OUT") \
          '{ts:$ts, run_id:$run, iteration:($iter|tonumber? // null), label:$label, command:$cmd, exit:$exit, duration_s:$dur, output_tail:$tail}' >> "$FILE"
   N=$(wc -l < "$FILE" | tr -d ' ')
-  REF="evidence #$N ($(basename "$FILE"))"
+  REF="evidence #$N"
 else
   REF="not recorded (no .agent dir)"
 fi

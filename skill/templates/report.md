@@ -15,7 +15,7 @@ Product semantics, invariants, trust boundaries, tradeoffs, irreversible decisio
 
 ## Decision
 
-Links to `.agent/decisions/`.
+Links to `.agent/context/adr/`.
 
 ## Implementation
 
@@ -25,7 +25,7 @@ What the agent discovered: file locations, call graphs, implementation detail.
 
 ## Testing
 
-Each claim cites an evidence line from `.agent/evidence/__RUN_ID__.jsonl`.
+Each claim cites an evidence line from `.agent/runs/__RUN_ID__/evidence.jsonl`.
 
 ## Tradeoffs and remaining risks
 

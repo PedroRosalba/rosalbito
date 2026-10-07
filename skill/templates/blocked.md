@@ -8,7 +8,7 @@ The decision:
 What I investigated:
   - code read:
   - hypotheses tested:
-  - evidence gathered (cite .agent/evidence lines):
+  - evidence gathered (cite evidence.jsonl lines):
 
 Options:
   A. <option> — tradeoffs

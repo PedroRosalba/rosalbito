@@ -5,7 +5,7 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 [ -f "$STATE_FILE" ] || die "no run"
 RUN_ID="$(state_get run_id)"
-EV="$AGENT_DIR/evidence/$RUN_ID.jsonl"
+EV="$EVIDENCE_FILE"
 ev_total=0; ev_failed=0; same_max=0; labels_passed="[]"
 if [ -s "$EV" ]; then
   ev_total=$(wc -l < "$EV" | tr -d ' ')
@@ -15,7 +15,7 @@ if [ -s "$EV" ]; then
 fi
 reviews=$(grep -cE '^- round' "$STATE_FILE" 2>/dev/null || true); reviews="${reviews:-0}"
 rejections=$(grep -ciE '^- round.*(reject|fail|changes requested)' "$STATE_FILE" 2>/dev/null || true); rejections="${rejections:-0}"
-decisions=$(ls "$AGENT_DIR/decisions" 2>/dev/null | wc -l | tr -d ' ')
+decisions=$(grep -ls "^- run: $RUN_ID" "$CONTEXT_DIR"/adr/*.md 2>/dev/null | wc -l | tr -d ' ')
 open_dec=$(awk '/^## Open decisions/{f=1;next} /^## /{f=0} f && /^- /' "$STATE_FILE" | wc -l | tr -d ' ')
 tests_added=$(git -C "$ROOT" diff --stat "$(state_get base_branch)"...HEAD 2>/dev/null | grep -ciE 'test' || true); tests_added="${tests_added:-0}"
 jq -cn --arg run "$RUN_ID" --arg risk "$(state_get risk)" --arg status "$(state_get status)" \

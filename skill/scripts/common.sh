@@ -8,8 +8,16 @@ repo_root() {
 }
 
 ROOT="$(repo_root)"
-AGENT_DIR="$ROOT/.agent"
-STATE_FILE="$AGENT_DIR/state/current.md"
+AGENT_DIR="$ROOT/.agent"            # internal, never committed (see references/state-schema.md)
+CONTEXT_DIR="$AGENT_DIR/context"    # durable: what we know about this repo
+RUNS_DIR="$AGENT_DIR/runs"          # ephemeral: what happened during each run
+CURRENT_LINK="$RUNS_DIR/current"    # symlink -> runs/<run_id>
+STATE_FILE="$CURRENT_LINK/state.md"
+EVIDENCE_FILE="$CURRENT_LINK/evidence.jsonl"
+METRICS_FILE="$RUNS_DIR/metrics.jsonl"
+
+# directory of the current run (resolved), empty if none
+run_dir() { [ -L "$CURRENT_LINK" ] && [ -d "$CURRENT_LINK/" ] && (cd "$CURRENT_LINK" && pwd -P) || true; }
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
@@ -25,10 +33,10 @@ iso_to_epoch() {
 
 die() { echo "rosalbito: $*" >&2; exit 1; }
 
-# config lookup: repo override first, then skill default
+# config lookup: repo context override first, then skill default
 config_file() {
   local name="$1"
-  if [ -f "$AGENT_DIR/$name" ]; then echo "$AGENT_DIR/$name"; else echo "$SKILL_DIR/config/$name"; fi
+  if [ -f "$CONTEXT_DIR/$name" ]; then echo "$CONTEXT_DIR/$name"; else echo "$SKILL_DIR/config/$name"; fi
 }
 
 # read a flat scalar `key: value` from a yaml/frontmatter file
@@ -48,4 +56,9 @@ tier_rank() {
   esac
 }
 
-slugify() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]+/-/g' -e 's/[^a-z0-9]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-40; }
+# lower-case, dash-separated, at most 40 chars, trimmed to a word boundary when truncated
+slugify() {
+  local s; s="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')"
+  if [ "${#s}" -gt 40 ]; then s="$(echo "$s" | cut -c1-41 | sed -e 's/-[a-z0-9]*$//')"; fi
+  echo "$s" | cut -c1-40 | sed 's/-$//'
+}

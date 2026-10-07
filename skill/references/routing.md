@@ -50,8 +50,8 @@ human:
 1. the task statement
 2. repository evidence (code, tests, docs, git history)
 3. the acceptance contract
-4. established invariants (`.agent/invariants.md` when present)
-5. prior decisions in `.agent/decisions/`
+4. established invariants (`.agent/context/invariants.md` when present)
+5. prior decisions in `.agent/context/adr/`
 
 If the answer can be inferred from these, decide, and write a decision record. Waking
 Pedro to rubber-stamp an inferable choice is a failure, same as guessing silently.
