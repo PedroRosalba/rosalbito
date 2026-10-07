@@ -1,7 +1,7 @@
 # Experiment 01: first real run (spec §16)
 
 Date: 2026-10-06 · Repo: `PedroRosalba/rust-tx-processor` (Rust payment engine CLI) ·
-Result: **PR [#1](https://github.com/PedroRosalba/rust-tx-processor/pull/1) opened, run `done`**
+Result: **PR [#2](https://github.com/PedroRosalba/rust-tx-processor/pull/2) opened, run `done`** (replaces #1, see finding 7)
 
 ## Task
 
@@ -51,7 +51,15 @@ two subagents, zero interruptions.
    spawned by another agent. Documented in `docs/driver-decision.md`.
 5. **Run slug truncation** cut mid-word (`…sort-account-ro`). Cosmetic. → `slugify` trims to
    a word boundary.
-6. **Evidence is noisy but useful.** 25 lines for a MEDIUM run, 9 from the reviewer. The
+6. **Run artifacts were committed to the target repo.** The spec's "audit it in the PR" idea
+   put `.agent/` (state, evidence, decisions) into PR #1. Pedro's rule: that documentation is
+   internal to the organization and its agents, never committed to GitHub. → `init-run.sh`
+   now excludes `.agent/` through `.git/info/exclude`; the PR body carries the evidence
+   table and decision summaries instead. PR #1 was closed and replaced by #2 with only the
+   two code commits. Lesson for the recovery itself: `gh pr close --delete-branch` also
+   deletes the local branch, and switching branches drops tracked-but-now-excluded files
+   from the working tree; the artifacts were restored from the commit objects.
+7. **Evidence is noisy but useful.** 25 lines for a MEDIUM run, 9 from the reviewer. The
    `evidence-summary.sh` "latest per label" view is what the PR needs; the raw JSONL stays as
    the audit trail. No change.
 
