@@ -27,7 +27,7 @@ fi
 
 if ! $installed; then
   echo "warning: ralph-loop plugin not installed/enabled — no loop driver. The run continues in this session only;" >&2
-  echo "         resume later with /rosalbito (reads .agent/state/current.md). Install: /plugin install ralph-loop@claude-plugins-official" >&2
+  echo "         resume later with /rosalbito (reads .agent/runs/current/state.md). Install: /plugin install ralph-loop@claude-plugins-official" >&2
   bash "$SKILL_DIR/scripts/state.sh" set driver none
   exit 0
 fi
@@ -55,7 +55,7 @@ started_at: "$(now_iso)"
 
 Continue the Rosalbito run $RUN_ID in this repository.
 
-1. Read .agent/state/current.md first. It is the only source of truth about this run.
+1. Read .agent/runs/current/state.md first. It is the only source of truth about this run. Durable repo knowledge is in .agent/context/.
 2. Run \`bash SKILL_DIR/scripts/caps-check.sh\` (SKILL_DIR = the rosalbito skill directory). If it exits non-zero, write the blocked report and finish the run as blocked.
 3. Continue from \`next_action\`. Record every check through verify.sh. Keep current.md truthful: status, next_action, log.
 4. When the run reaches status done or blocked (finish-run.sh has been called and the final report printed), output exactly: <promise>$PROMISE</promise>
