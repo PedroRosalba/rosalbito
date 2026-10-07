@@ -15,8 +15,10 @@
   caps.yaml               # optional per-repo caps
 ```
 
-Committed on the feature branch by default so the PR carries the audit trail. Set
-`ROSALBITO_COMMIT_AGENT_DIR=0` to keep it local.
+**Internal, never committed.** `init-run.sh` adds `.agent/` to `.git/info/exclude` (not
+`.gitignore`, so the target repo is not modified). The PR body carries the evidence table and
+decision summaries; the files stay on the machine for Pedro and the agents.
+`ROSALBITO_COMMIT_AGENT_DIR=1` opts in to committing them.
 
 ## `current.md` frontmatter
 
