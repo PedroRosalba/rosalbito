@@ -1,12 +1,12 @@
 # Reviewer subagent briefs (fresh contexts, adversarial)
 
 Spawn with the Agent tool. Give the reviewer ONLY: the task, the diff (`git diff
-<base>...HEAD`), the acceptance contract, `.agent/invariants.md` if present, and the brief
-below. Never your reasoning or your evidence bundle — that bundle was authored by the party
+<base>...HEAD`), the acceptance contract, `.agent/context/invariants.md` and relevant
+`.agent/context/adr/` records if present, and the brief below. Never your reasoning or your evidence bundle — that bundle was authored by the party
 under review. The reviewer writes its verdict as `ACCEPT` or `REJECT` with findings, each
 finding with a concrete counterexample or reproduction.
 
-Record each round in `current.md` under `## Reviews` as `- round N: <reviewer> — ACCEPT|REJECT — <summary>`.
+Record each round in `state.md` under `## Reviews` as `- round N: <reviewer> — ACCEPT|REJECT — <summary>`.
 
 ## Correctness (MEDIUM+)
 
@@ -14,8 +14,8 @@ Record each round in `current.md` under `## Reviews` as `- round N: <reviewer> �
 > duplicates, retries, concurrency, partial failures, timeouts, stale state, boundary
 > values, empty collections, unicode, overflow. For each acceptance criterion with a
 > `command`, run the command yourself and report the exit code. For `reviewer` criteria,
-> give a verdict with evidence. If `/code-review` is available in this session, run it on
-> the diff first and then go beyond it. Output: ACCEPT or REJECT, findings ranked by
+> give a verdict with evidence. If `/code-review` or the `mattpocock-skills:code-review`
+> skill is available, run it on the diff first and then go beyond it. Output: ACCEPT or REJECT, findings ranked by
 > severity, each with file:line and a reproduction.
 
 ## Security (HIGH+)
@@ -44,6 +44,7 @@ then compare.
 ## Debugger (on LOOP_DETECTED)
 
 > A check keeps failing after N attempts. You have no history of those attempts on purpose.
-> Reproduce the failure from scratch, form one hypothesis, test it, and either fix it or
-> report precisely why it cannot be fixed within the task's constraints. Record every
-> command through verify.sh.
+> Load the `mattpocock-skills:diagnosing-bugs` skill if available and follow its loop:
+> reproduce the failure from scratch, minimise, form one hypothesis, instrument, test it,
+> and either fix it or report precisely why it cannot be fixed within the task's
+> constraints. Record every command through verify.sh.
