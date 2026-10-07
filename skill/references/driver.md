@@ -11,7 +11,7 @@ How it behaves:
 1. Rosalbito works; when the model ends its turn, the Stop hook fires.
 2. The hook finds the state file, sees no `<promise>ROSALBITO RUN FINISHED</promise>` in
    the last message, increments `iteration`, blocks the stop and feeds the re-entry prompt
-   back: *read `.agent/state/current.md`, run `caps-check.sh`, continue from `next_action`.*
+   back: *read `.agent/runs/current/state.md`, run `caps-check.sh`, continue from `next_action`.*
 3. Context grows and eventually compacts. The re-entry prompt plus `current.md` is enough
    to continue — that is what the resume protocol is for.
 4. `finish-run.sh done|blocked` removes the state file; the final message carries the
