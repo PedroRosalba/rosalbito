@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rosalbito Runs</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2; --surface-1: #fcfcfb; --surface-2: #f0efec; --border: #e2e0da;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --accent: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
+    --accent: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
+  --accent: #3987e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 14px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 15px; margin: 0 0 2px; }
+.sub { color: var(--text-secondary); margin: 0; }
+.muted { color: var(--text-muted); }
+.small { font-size: 12px; }
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+select, button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; }
+button { cursor: pointer; }
+button[aria-pressed="true"] { background: var(--surface-2); }
+.card { min-width: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+.card-head { display: flex; gap: 12px; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 2px 0; letter-spacing: -0.02em; }
+.tile .note { color: var(--text-muted); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { .rows { grid-template-columns: minmax(0, 1fr); gap: 2px 0; } .rowlabel { margin-top: 6px; } }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.rows { display: grid; grid-template-columns: minmax(120px, 260px) 1fr; gap: 8px 12px; align-items: center; }
+.rowlabel { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowlabel b { color: var(--text-primary); font-weight: 500; }
+.bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.track { display: flex; gap: 2px; height: 14px; min-width: 2px; }
+.seg { height: 100%; }
+.seg:last-child { border-radius: 0 4px 4px 0; }
+.seg:hover { filter: brightness(1.12); }
+.barval { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stack100 { display: flex; gap: 2px; height: 22px; margin: 6px 0 12px; }
+.stack100 .seg:first-child { border-radius: 4px 0 0 4px; }
+.stack100 .seg:last-child { border-radius: 0 4px 4px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 500; color: var(--text-secondary); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr.run { cursor: pointer; }
+tr.run:hover td { background: var(--surface-2); }
+tr.detail td { background: var(--surface-2); padding: 10px 12px 14px; }
+.scroll { overflow-x: auto; }
+.task { max-width: 340px; }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.meter { height: 6px; background: var(--surface-2); border-radius: 3px; min-width: 60px; }
+.meter > div { height: 100%; background: var(--series-1); border-radius: 0 3px 3px 0; }
+.flags { list-style: none; margin: 0; padding: 0; }
+.flags li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.flags li:last-child { border-bottom: 0; }
+.flags .icon { width: 18px; text-align: center; flex: none; font-weight: 700; }
+a { color: var(--accent); }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 10; max-width: 320px; }
+#tip b { font-weight: 600; }
+.empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Rosalbito runs</h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="filters">
+      <select id="f-repo" aria-label="Repository"></select>
+      <select id="f-risk" aria-label="Risk tier"></select>
+      <select id="f-status" aria-label="Status">
+        <option value="">All statuses</option><option value="done">Done</option><option value="blocked">Blocked</option>
+        <option value="open">Open</option><option value="stale">Stale</option>
+      </select>
+    </div>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Needs attention</h2><p class="sub small">Gaps in the harness's own bookkeeping, and runs worth a look</p></div></div>
+    <ul class="flags" id="flags"></ul>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div><h2>Cost per run, by agent role</h2><p class="sub small">API-equivalent USD from Claude Code transcripts. Hover a segment for detail.</p></div>
+      <button id="t-runs" aria-pressed="false">Table</button>
+    </div>
+    <div class="legend" id="legend-roles"></div>
+    <div id="chart-runs"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs</p></div></div>
+      <div id="chart-kinds"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs</p></div></div>
+      <div class="scroll" id="table-roles"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Runs</h2><p class="sub small">Click a row for its agents</p></div></div>
+    <div class="scroll" id="table-runs"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs</p></div></div>
+    <div class="scroll" id="table-tools"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__ROSALBITO_DATA__</script>
+<script>
+(function () {
+  const RAW = JSON.parse(document.getElementById('data').textContent || '{"runs":[]}');
+  const RUNS = RAW.runs || [];
+  const ROLE_GROUPS = [
+    { key: 'orchestrator', label: 'Orchestrator', match: r => r === 'orchestrator' },
+    { key: 'implementer', label: 'Implement / write', match: r => r === 'implementer' || r === 'writer' },
+    { key: 'reviewer', label: 'Reviewer', match: r => r.startsWith('review') },
+    { key: 'explore', label: 'Explore / plan', match: r => r === 'explorer' || r === 'planner' },
+    { key: 'debug', label: 'Debug / test', match: r => r === 'debugger' || r === 'tester' },
+    { key: 'other', label: 'Other', match: () => true },
+  ];
+  const groupOf = role => ROLE_GROUPS.find(g => g.match(role || 'other')).key;
+  const colorOf = i => `var(--series-${i + 1})`;
+  const KINDS = [['cache_read', 'Cache read'], ['cache_write', 'Cache write'], ['output', 'Output'], ['input', 'Uncached input']];
+
+  const $ = id => document.getElementById(id);
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'style') el.style.cssText = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'tip') el.dataset.tip = v; else el.setAttribute(k, v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+    return el;
+  }
+  const usd = v => v == null ? '–' : v >= 100 ? '$' + Math.round(v) : v >= 10 ? '$' + v.toFixed(1) : '$' + v.toFixed(2);
+  const tok = v => v == null ? '–' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(v);
+  const pct = v => v == null ? '–' : Math.round(v * 100) + '%';
+  const mins = v => v == null ? '–' : v >= 60 ? (v / 60).toFixed(1) + ' h' : v + ' min';
+  const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const sum = (a, f) => a.reduce((t, x) => t + (f(x) || 0), 0);
+  const cost = r => r.usage && r.usage.totals ? r.usage.totals.cost_usd : null;
+  const agents = r => (r.usage && r.usage.agents) || [];
+  const isOpen = r => r.status !== 'done' && r.status !== 'blocked';
+  const statusKey = r => r.status === 'done' ? 'done' : r.status === 'blocked' ? 'blocked' : r.stale ? 'stale' : 'open';
+  const STATUS = {
+    done: ['var(--good)', '✓', 'done'], blocked: ['var(--warning)', '‖', 'blocked'],
+    open: ['var(--text-muted)', '●', 'open'], stale: ['var(--serious)', '!', 'stale'],
+  };
+  const badge = r => { const [c, i, l] = STATUS[statusKey(r)]; return h('span', { class: 'badge' }, h('span', { class: 'dot', style: `background:${c}` }), `${l}${statusKey(r) === 'open' ? ' · ' + r.status : ''}`); };
+  const shortTask = (t, n) => (t || '').length > n ? t.slice(0, n - 1) + '…' : (t || '');
+
+  // filters
+  const uniq = a => [...new Set(a)].filter(Boolean).sort();
+  const fill = (sel, label, vals) => { sel.append(h('option', { value: '' }, label), ...vals.map(v => h('option', { value: v }, v))); };
+  fill($('f-repo'), 'All repos', uniq(RUNS.map(r => r.repo)));
+  fill($('f-risk'), 'All risk tiers', ['TRIVIAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].filter(t => RUNS.some(r => r.risk === t)));
+  const PREF_KEY = 'rosalbito-dashboard-filters';
+  try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); for (const k of ['repo', 'risk', 'status']) if (p[k]) $('f-' + k).value = p[k]; } catch (e) {}
+  const filtered = () => RUNS.filter(r =>
+    (!$('f-repo').value || r.repo === $('f-repo').value) &&
+    (!$('f-risk').value || r.risk === $('f-risk').value) &&
+    (!$('f-status').value || statusKey(r) === $('f-status').value));
+  for (const k of ['repo', 'risk', 'status']) $('f-' + k).addEventListener('change', () => {
+    try { localStorage.setItem(PREF_KEY, JSON.stringify({ repo: $('f-repo').value, risk: $('f-risk').value, status: $('f-status').value })); } catch (e) {}
+    render();
+  });
+
+  // tooltip
+  const tip = $('tip');
+  document.addEventListener('mousemove', e => {
+    const t = e.target.closest && e.target.closest('[data-tip]');
+    if (!t) { tip.style.display = 'none'; return; }
+    tip.innerHTML = t.dataset.tip; tip.style.display = 'block';
+    const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+    const y = e.clientY + 14 + tip.offsetHeight > window.innerHeight ? e.clientY - tip.offsetHeight - 10 : e.clientY + 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+  function tiles(runs) {
+    const fin = runs.filter(r => !isOpen(r));
+    const done = runs.filter(r => r.status === 'done');
+    const priced = runs.filter(r => cost(r) != null);
+    const totalCost = sum(priced, cost);
+    const spawned = sum(runs, r => r.usage && r.usage.totals.agents_spawned);
+    const rounds = sum(runs, r => r.review_rounds), rej = sum(runs, r => r.review_rejections);
+    const cr = sum(priced, r => r.usage.totals.cache_read_tokens), cw = sum(priced, r => r.usage.totals.cache_write_tokens + r.usage.totals.input_tokens);
+    const T = (label, value, note) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'note' }, note));
+    $('tiles').replaceChildren(
+      T('Runs', runs.length, `${done.length} done · ${runs.filter(r => r.status === 'blocked').length} blocked · ${runs.filter(isOpen).length} open`),
+      T('Estimated cost', usd(totalCost), `${priced.length} runs with transcripts`),
+      T('Median cost, finished run', usd(median(fin.map(cost).filter(v => v != null))), `median wall ${mins(median(fin.map(r => r.wall_minutes).filter(v => v != null)))}`),
+      T('Subagents spawned', spawned, runs.length ? `${(spawned / runs.length).toFixed(1)} per run` : ''),
+      T('Review rejections', rounds ? pct(rej / rounds) : '–', `${rej} of ${rounds} review rounds`),
+      T('Cache hit ratio', cr + cw ? pct(cr / (cr + cw)) : '–', 'input served from cache'),
+    );
+  }
+
+  function flags(runs) {
+    const out = [];
+    const add = (sev, title, detail) => out.push({ sev, title, detail });
+    for (const r of runs) {
+      const name = `${r.repo} · ${shortTask(r.task || r.run_id, 60)}`;
+      if (r.stale) add('serious', `Abandoned run: ${name}`, `status "${r.status}", untouched since ${r.updated_at}. Resume it or finish-run.sh blocked, or it never reaches metrics.jsonl.`);
+      else if (isOpen(r)) add('info', `Open run: ${name}`, `status "${r.status}", last update ${r.updated_at}. No metrics line until finish-run.sh.`);
+      if (r.status === 'done' && ['HIGH', 'CRITICAL'].includes(r.risk) && !r.has_report && !r.legacy) add('warning', `${r.risk} run finished without report.md: ${name}`, 'The skill requires runs/<id>/reports/report.md for HIGH+; finish-run.sh now enforces it.');
+      if (!r.usage || !r.usage.sessions || !r.usage.sessions.length) add('warning', `No transcript found: ${name}`, 'Cost and agents unknown. The session may be deleted, or the run predates session recording.');
+      else if (r.usage.totals.unpriced_models && r.usage.totals.unpriced_models.length) add('warning', `Unpriced model in ${name}`, `${r.usage.totals.unpriced_models.join(', ')}: add it to config/pricing.json.`);
+      if (r.same_failure_max >= 3) add('serious', `Loop detected: ${name}`, `same check failed ${r.same_failure_max} times in a row.`);
+      if (r.legacy) add('info', `Legacy layout: ${name}`, 'Recovered from an old metrics.jsonl; state and evidence files are gone.');
+    }
+    const noVersion = runs.filter(r => !r.harness_version && !r.legacy);
+    if (noVersion.length) add('info', `${noVersion.length} run${noVersion.length === 1 ? '' : 's'} without a harness version`, 'Started before init-run recorded harness_version; they cannot be compared across harness versions.');
+    const order = { serious: 0, warning: 1, info: 2 };
+    out.sort((a, b) => order[a.sev] - order[b.sev]);
+    const ICON = { serious: ['!', 'var(--serious)', 'Serious'], warning: ['▲', 'var(--warning)', 'Warning'], info: ['i', 'var(--text-muted)', 'Info'] };
+    $('flags').replaceChildren(...(out.length ? out.map(f => h('li', {},
+      h('span', { class: 'icon', style: `color:${ICON[f.sev][1]}`, 'aria-label': ICON[f.sev][2], title: ICON[f.sev][2] }, ICON[f.sev][0]),
+      h('div', {}, h('div', {}, f.title), h('div', { class: 'small muted' }, f.detail)))) : [h('li', { class: 'muted' }, 'Nothing to flag.')]));
+  }
+
+  let runsAsTable = false;
+  $('t-runs').addEventListener('click', () => { runsAsTable = !runsAsTable; $('t-runs').setAttribute('aria-pressed', runsAsTable); render(); });
+
+  function runRoleCosts(r) {
+    const by = Object.fromEntries(ROLE_GROUPS.map(g => [g.key, { cost: 0, n: 0 }]));
+    for (const a of agents(r)) { const g = by[groupOf(a.role)]; g.cost += a.cost_usd; if (a.agent_id !== 'main') g.n += 1; }
+    return by;
+  }
+
+  function chartRuns(runs) {
+    $('legend-roles').replaceChildren(...ROLE_GROUPS.map((g, i) => h('span', {}, h('i', { class: 'sw', style: `background:${colorOf(i)}` }), g.label)));
+    const rs = runs.filter(r => cost(r) != null).sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    if (!rs.length) { $('chart-runs').replaceChildren(h('div', { class: 'empty' }, 'No runs with transcripts in this filter.')); return; }
+    if (runsAsTable) {
+      $('chart-runs').replaceChildren(h('div', { class: 'scroll' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Run'), ...ROLE_GROUPS.map(g => h('th', { class: 'num' }, g.label)), h('th', { class: 'num' }, 'Total'))),
+        h('tbody', {}, rs.map(r => { const by = runRoleCosts(r); return h('tr', {}, h('td', {}, `${r.repo} · ${shortTask(r.task, 50)}`),
+          ...ROLE_GROUPS.map(g => h('td', { class: 'num' }, by[g.key].cost ? usd(by[g.key].cost) : '–')), h('td', { class: 'num' }, usd(cost(r)))); })))));
+      return;
+    }
+    const max = Math.max(...rs.map(cost));
+    const rows = h('div', { class: 'rows' });
+    for (const r of rs) {
+      const by = runRoleCosts(r);
+      rows.append(h('div', { class: 'rowlabel', title: r.task }, h('b', {}, r.repo), ' · ', shortTask(r.task, 48)));
+      const track = h('div', { class: 'track', style: `width:${Math.max(0.5, cost(r) / max * 100)}%` });
+      ROLE_GROUPS.forEach((g, i) => {
+        const c = by[g.key].cost; if (c <= 0) return;
+        track.append(h('div', { class: 'seg', style: `flex:${c} 1 0; background:${colorOf(i)}`,
+          tip: `<b>${esc(g.label)}</b> · ${usd(c)} (${pct(c / cost(r))})<br>${g.key === 'orchestrator' ? 'main session' : by[g.key].n + ' spawn' + (by[g.key].n === 1 ? '' : 's')}<br><span class="muted">${esc(r.repo)} · ${esc(r.risk)} · ${esc(r.status)}</span>` }));
+      });
+      rows.append(h('div', { class: 'bar' }, h('div', { style: 'flex:1; min-width:0; display:flex' }, track), h('span', { class: 'barval' }, usd(cost(r)))));
+    }
+    $('chart-runs').replaceChildren(rows);
+  }
+
+  function chartKinds(runs) {
+    const tot = Object.fromEntries(KINDS.map(([k]) => [k, 0]));
+    for (const r of runs) for (const a of agents(r)) for (const [k] of KINDS) tot[k] += (a.cost_by_kind && a.cost_by_kind[k]) || 0;
+    const all = sum(KINDS, ([k]) => tot[k]);
+    if (!all) { $('chart-kinds').replaceChildren(h('div', { class: 'empty' }, 'No cost data in this filter.')); return; }
+    const toks = { cache_read: 'cache_read_tokens', cache_write: 'cache_write_tokens', output: 'output_tokens', input: 'input_tokens' };
+    const bar = h('div', { class: 'stack100', role: 'img', 'aria-label': 'Cost by token kind' },
+      KINDS.filter(([k]) => tot[k] > 0).map(([k, l]) => h('div', { class: 'seg', style: `flex:${tot[k]} 1 0; background:${colorOf(KINDS.findIndex(x => x[0] === k))}`,
+        tip: `<b>${l}</b> · ${usd(tot[k])} (${pct(tot[k] / all)})` })));
+    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Kind'), h('th', { class: 'num' }, 'Tokens'), h('th', { class: 'num' }, 'Cost'), h('th', { class: 'num' }, 'Share'))),
+      h('tbody', {}, KINDS.map(([k, l], i) => h('tr', {}, h('td', {}, h('span', { class: 'badge' }, h('i', { class: 'sw', style: `background:${colorOf(i)}` }), l)),
+        h('td', { class: 'num' }, tok(sum(runs, r => r.usage && r.usage.totals[toks[k]]))), h('td', { class: 'num' }, usd(tot[k])), h('td', { class: 'num' }, pct(tot[k] / all))))));
+    const est = sum(runs, r => r.usage && r.usage.totals.output_estimated_messages);
+    $('chart-kinds').replaceChildren(bar, tbl, est ? h('p', { class: 'small muted' }, `${est} subagent messages kept only partial output counts in the transcript; their output is estimated from visible text (hidden thinking not included).`) : '');
+  }
+
+  function tableRoles(runs) {
+    const by = {};
+    for (const r of runs) for (const a of agents(r)) {
+      const k = a.role || 'other'; const x = by[k] || (by[k] = { spawns: 0, cost: 0, msgs: 0, out: 0, runs: new Set() });
+      x.spawns += a.agent_id === 'main' ? 0 : 1; x.cost += a.cost_usd; x.msgs += a.messages; x.runs.add(r.run_id);
+    }
+    const rows = Object.entries(by).sort((a, b) => b[1].cost - a[1].cost);
+    if (!rows.length) { $('table-roles').replaceChildren(h('div', { class: 'empty' }, 'No agents in this filter.')); return; }
+    const max = Math.max(...rows.map(([, x]) => x.cost));
+    $('table-roles').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Role'), h('th', { class: 'num' }, 'Spawns'), h('th', { class: 'num' }, 'Cost'), h('th', {}, ''), h('th', { class: 'num' }, 'Per spawn'), h('th', { class: 'num' }, 'Msgs/spawn'))),
+      h('tbody', {}, rows.map(([k, x]) => { const n = k === 'orchestrator' ? x.runs.size : x.spawns; return h('tr', {},
+        h('td', {}, k), h('td', { class: 'num' }, k === 'orchestrator' ? '–' : x.spawns), h('td', { class: 'num' }, usd(x.cost)),
+        h('td', { style: 'width:30%' }, h('div', { class: 'meter' }, h('div', { style: `width:${x.cost / max * 100}%` }))),
+        h('td', { class: 'num', title: k === 'orchestrator' ? 'per run' : 'per spawn' }, usd(n ? x.cost / n : null)),
+        h('td', { class: 'num' }, n ? Math.round(x.msgs / n) : '–')); }))));
+  }
+
+  function tableRuns(runs) {
+    if (!runs.length) { $('table-runs').replaceChildren(h('div', { class: 'empty' }, 'No runs match these filters.')); return; }
+    const rs = [...runs].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    const tbody = h('tbody');
+    for (const r of rs) {
+      const detail = h('tr', { class: 'detail', hidden: true }, h('td', { colspan: 12 }, agentTable(r)));
+      const tr = h('tr', { class: 'run', tabindex: 0, onclick: () => { detail.hidden = !detail.hidden; },
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail.hidden = !detail.hidden; } } },
+        h('td', { class: 'small muted', style: 'white-space:nowrap' }, (r.started_at || '').replace('T', ' ').slice(0, 16)),
+        h('td', {}, r.repo),
+        h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90)),
+        h('td', {}, r.risk),
+        h('td', {}, badge(r)),
+        h('td', { class: 'num' }, mins(r.wall_minutes)),
+        h('td', { class: 'num' }, r.iterations),
+        h('td', { class: 'num', title: 'failed / run' }, `${r.checks_failed}/${r.checks_run}`),
+        h('td', { class: 'num', title: 'rejections / rounds' }, `${r.review_rejections}/${r.review_rounds}`),
+        h('td', { class: 'num' }, r.usage ? r.usage.totals.agents_spawned : '–'),
+        h('td', { class: 'num' }, usd(cost(r))),
+        h('td', {}, r.pr ? h('a', { href: r.pr, target: '_blank', rel: 'noopener', onclick: e => e.stopPropagation() }, 'PR ' + (r.pr.match(/\/(\d+)$/) || ['', '↗'])[1]) : '–'));
+      tbody.append(tr, detail);
+    }
+    $('table-runs').replaceChildren(h('table', {}, h('thead', {}, h('tr', {},
+      ['Started (UTC)', 'Repo', 'Task', 'Risk', 'Status', 'Wall', 'Iter', 'Checks ✕', 'Rev ✕', 'Agents', 'Cost', 'PR'].map((t, i) => h('th', { class: i >= 5 && i <= 10 ? 'num' : null }, t)))), tbody));
+  }
+
+  function agentTable(r) {
+    const as = agents(r);
+    const meta = h('p', { class: 'small muted', style: 'margin:0 0 8px' },
+      `run ${r.run_id} · harness ${r.harness_version || 'unknown'} · ${r.usage ? r.usage.sessions.length : 0} session(s) · decisions ${r.decisions_recorded} · tests touched ${r.test_files_touched}` +
+      (r.has_report ? ' · report.md ✓' : '') + (r.has_blocked_report ? ' · blocked.md ✓' : '') + ` · ${r.repo_path || ''}`);
+    if (!as.length) return h('div', {}, meta, h('div', { class: 'muted small' }, 'No transcript data for this run.'));
+    return h('div', {}, meta, h('table', {},
+      h('thead', {}, h('tr', {}, ['Agent', 'Role', 'Type', 'Model', 'Msgs', 'Cache read', 'Cache write', 'Output', 'Cost', 'Top tools'].map((t, i) => h('th', { class: i >= 4 && i <= 8 ? 'num' : null }, t)))),
+      h('tbody', {}, as.map(a => h('tr', {},
+        h('td', {}, (a.depth > 1 ? '↳ ' : '') + a.description),
+        h('td', {}, a.role), h('td', { class: 'small muted' }, a.agent_type + (a.background ? ' · bg' : '')),
+        h('td', { class: 'small' }, a.models.join(', ')),
+        h('td', { class: 'num' }, a.messages), h('td', { class: 'num' }, tok(a.cache_read_tokens)), h('td', { class: 'num' }, tok(a.cache_write_tokens)),
+        h('td', { class: 'num', title: a.output_estimated_messages ? 'partly estimated' : null }, tok(a.output_tokens) + (a.output_estimated_messages ? '*' : '')),
+        h('td', { class: 'num' }, usd(a.cost_usd)),
+        h('td', { class: 'small muted' }, Object.entries(a.tools || {}).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(' · ')))))));
+  }
+
+  function tableTools(runs) {
+    const by = {};
+    for (const r of runs) for (const a of agents(r)) for (const [t, n] of Object.entries(a.tools || {})) {
+      const x = by[t] || (by[t] = { main: 0, sub: 0 }); if (a.agent_id === 'main') x.main += n; else x.sub += n;
+    }
+    const rows = Object.entries(by).sort((a, b) => (b[1].main + b[1].sub) - (a[1].main + a[1].sub)).slice(0, 15);
+    if (!rows.length) { $('table-tools').replaceChildren(h('div', { class: 'empty' }, 'No tool calls in this filter.')); return; }
+    const max = Math.max(...rows.map(([, x]) => x.main + x.sub));
+    $('table-tools').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Tool'), h('th', { class: 'num' }, 'Orchestrator'), h('th', { class: 'num' }, 'Subagents'), h('th', { class: 'num' }, 'Total'), h('th', {}, ''))),
+      h('tbody', {}, rows.map(([t, x]) => h('tr', {}, h('td', {}, t), h('td', { class: 'num' }, x.main), h('td', { class: 'num' }, x.sub), h('td', { class: 'num' }, x.main + x.sub),
+        h('td', { style: 'width:35%' }, h('div', { class: 'meter' }, h('div', { style: `width:${(x.main + x.sub) / max * 100}%` }))))))));
+  }
+
+  function render() {
+    const runs = filtered();
+    const repos = uniq(RUNS.map(r => r.repo)).length;
+    $('subtitle').textContent = `${RUNS.length} runs across ${repos} repos · generated ${(RAW.generated_at || '').replace('T', ' ').replace('Z', ' UTC')}`;
+    tiles(runs); flags(runs); chartRuns(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
+    $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skill/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}, rebuilt by dashboard.sh. Local only.`;
+  }
+  render();
+})();
+</script>
+</body>
+</html>
