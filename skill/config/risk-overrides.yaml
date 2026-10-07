@@ -1,0 +1,42 @@
+# Path-based risk floors. Any changed path matching a rule raises the run's minimum
+# risk tier to `tier`. The classifier may raise above the floor, never lower below it.
+#
+# Per-repo override: copy this file to <repo>/.agent/risk-overrides.yaml and edit.
+# `match` is an extended regex (grep -E), matched case-insensitively against the
+# repo-relative path. Parsed by scripts/classify-paths.sh (no yq needed): keep the
+# three-line `- match / tier / reason` shape.
+
+tiers: [TRIVIAL, LOW, MEDIUM, HIGH, CRITICAL]
+
+rules:
+  - match: '(^|/|[_.-])(auth|authn|authz|authentication|authorization|authenticate|authorize|oauth2?|oidc|sso|session|sessions|login|logout|password|passwd|credentials?|jwt|tokens?|permissions?|rbac|acl|policy|policies)([^a-z]|$)'
+    tier: HIGH
+    reason: authentication / authorization
+
+  - match: '(^|/|[_.-])(payments?|billing|invoices?|checkout|stripe|pix|wallets?|ledger|refunds?|payouts?|subscriptions?|pricing|balance|transfer)([^a-z]|$)'
+    tier: HIGH
+    reason: payments / money movement
+
+  - match: '(^|/)(migrations?|migrate|schema|alembic|prisma/migrations|db/migrate|flyway|liquibase)(/|\.|$)|\.sql$'
+    tier: HIGH
+    reason: database migration / schema
+
+  - match: '(^|/)(secrets?|vault|keys?|certs?|\.env[^/]*|credentials?\.(json|ya?ml|toml))(/|\.|$)|(^|/)\.env(\..*)?$'
+    tier: HIGH
+    reason: secrets handling
+
+  - match: '(^|/)\.(github|gitlab|circleci|buildkite)/|(^|/)(\.travis\.yml|Jenkinsfile|azure-pipelines\.yml|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|cloudbuild\.ya?ml)$'
+    tier: HIGH
+    reason: CI configuration
+
+  - match: '(^|/)(infra|infrastructure|terraform|pulumi|cdk|ansible|helm|charts?|k8s|kubernetes|deploy|deployment)(/|\.|$)|\.tf$|(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose[^/]*\.ya?ml|fly\.toml|vercel\.json|netlify\.toml|render\.ya?ml)$'
+    tier: HIGH
+    reason: infrastructure / deployment
+
+  - match: '(^|/|[_.-])(crypto|cipher|encrypt|decrypt|signing|signature|hmac)([^a-z]|$)'
+    tier: HIGH
+    reason: cryptography
+
+  - match: '(^|/)(\.claude/|\.agent/hooks|hooks?/)[^/]*\.(sh|json)$'
+    tier: MEDIUM
+    reason: agent hooks / tool configuration

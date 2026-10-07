@@ -1,0 +1,6 @@
+# Hard caps. Dumb and global on purpose: pattern detection misses things.
+# Per-repo override: <repo>/.agent/caps.yaml. Enforced by scripts/caps-check.sh.
+
+max_iterations_per_run: 25     # tune from real runs
+max_wall_clock_hours: 8
+max_same_failure: 3            # same verify label failing N times in a row => LOOP_DETECTED
