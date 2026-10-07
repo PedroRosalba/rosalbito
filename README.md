@@ -85,13 +85,13 @@ skill/                      the Claude Code skill (symlinked to ~/.claude/skills
   config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/), pricing.json
   scripts/                  init-context, init-run, state, verify, detect-checks, classify-paths,
                             caps-check, start-loop, finish-run, metrics, evidence-summary,
-                            usage, collect, dashboard
+                            usage, collect, dashboard (+ dashboard-server.mjs)
   hooks/rosalbito-guard.sh  PreToolUse hard gate
   templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md, dashboard.html
   references/               routing, driver, reviews, understanding, reports, state-schema
 skills/telemetry/           generic telemetry-engineering skill (model-invoked; symlinked to ~/.claude/skills/telemetry)
 install.sh                  symlinks + hook registration (idempotent, backs up settings.json)
-tests/run.sh                90 deterministic checks for scripts and the hook
+tests/run.sh                94 deterministic checks for scripts and the hook
 tests/resume-test.sh        kill-a-session-mid-run test (real model calls)
 docs/                       spec, inventory, reuse-vs-build, driver decision
 ```
@@ -116,7 +116,9 @@ Run write-ups and experiment logs are kept locally too, not in this repository.
 ## Observability
 
 ```bash
-bash skill/scripts/dashboard.sh --open      # or /rosalbito dashboard
+bash skill/scripts/dashboard.sh --serve --open    # live: http://localhost:7777, updates itself
+bash skill/scripts/dashboard.sh --install-service # same, kept running by launchd (starts at login)
+bash skill/scripts/dashboard.sh --open            # one-off static snapshot: ~/.rosalbito/dashboard.html
 ```
 
 Every run, in every repo, on one local page (`~/.rosalbito/dashboard.html`): outcome, wall
@@ -131,7 +133,11 @@ without a report, runs with no transcript, loops). The numbers are read after th
   keep only partial output counts; those are estimated from visible text and flagged.
 - `collect.sh` rebuilds `~/.rosalbito/runs.jsonl` from every repo with an `.agent/` (registered
   by init-run/finish-run, or found under `$HOME`), finished or not.
-- `dashboard.sh` renders that index into one self-contained HTML file. Nothing leaves the machine.
+- `collect.sh` is incremental: a run whose state, evidence and transcripts did not change since the
+  last pass keeps its line, so a refresh with nothing new costs well under a second.
+- `dashboard-server.mjs` (Node, no dependencies, 127.0.0.1 only) re-collects every 15 s, with a full pass
+  every 10 min; the page polls `/api/runs` every 5 s and re-renders in place when the data changes,
+  keeping filters and expanded rows. `dashboard.sh` without `--serve` writes the same page as a static file.
 
 On a Claude subscription the cost is a comparison figure, not the invoice.
 

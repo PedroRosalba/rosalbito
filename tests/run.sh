@@ -144,6 +144,16 @@ check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO
 check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
+check "incremental collect reuses unchanged runs" 'bash "$S/collect.sh" "$TMP" >/dev/null && [ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ]'
+if command -v node >/dev/null && command -v curl >/dev/null; then
+  PORT=$(( 20000 + RANDOM % 20000 ))
+  ROSALBITO_PORT=$PORT ROSALBITO_REFRESH=3600 node "$S/dashboard-server.mjs" >/dev/null 2>&1 & SRV=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s "localhost:$PORT/api/runs" >/dev/null 2>&1 && break; perl -e 'select(undef,undef,undef,0.3)'; done
+  check "live server: /api/runs serves the index" 'curl -s "localhost:$PORT/api/runs" | jq -e ".live==true and (.runs|length)==2 and (.version|length)==12" >/dev/null'
+  check "live server: page has live data inlined"  'curl -s "localhost:$PORT/" | grep >/dev/null "\"live\":true"'
+  check "live server: rejects non-local Host"      '[ "$(curl -s -o /dev/null -w "%{http_code}" -H "Host: evil.example" "localhost:$PORT/api/runs")" = 403 ]'
+  kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+fi
 bash "$S/state.sh" set risk HIGH
 check "HIGH run cannot finish done without report.md" '! bash "$S/finish-run.sh" done >/dev/null 2>&1 && [ "$(bash "$S/state.sh" get status)" = "classifying" ]'
 echo "# report" > .agent/runs/current/reports/report.md

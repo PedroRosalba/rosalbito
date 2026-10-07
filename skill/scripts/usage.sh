@@ -54,11 +54,12 @@ echo '{}' > "$metas"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   sid="$(basename "$f" .jsonl)"
-  jq -c --arg s "$START" --arg e "$END_SLACK" --arg sess "$sid" --arg agent main "$SEL" "$f" 2>/dev/null >> "$records"
+  # grep first: tool-result lines are most of a transcript's bytes and never carry usage
+  grep -F '"type":"assistant"' "$f" | jq -c --arg s "$START" --arg e "$END_SLACK" --arg sess "$sid" --arg agent main "$SEL" 2>/dev/null >> "$records"
   for sf in "${f%.jsonl}"/subagents/agent-*.jsonl; do
     [ -f "$sf" ] || continue
     aid="$(basename "$sf" .jsonl)"; aid="${aid#agent-}"
-    jq -c --arg s "$START" --arg e "$END_SLACK" --arg sess "$sid" --arg agent "$aid" "$SEL | .agent = \$agent" "$sf" 2>/dev/null >> "$records"
+    grep -F '"type":"assistant"' "$sf" | jq -c --arg s "$START" --arg e "$END_SLACK" --arg sess "$sid" --arg agent "$aid" "$SEL | .agent = \$agent" 2>/dev/null >> "$records"
     meta="${sf%.jsonl}.meta.json"
     [ -f "$meta" ] && jq -c --arg a "$aid" '{($a): .}' "$meta" 2>/dev/null >> "$metas"
   done

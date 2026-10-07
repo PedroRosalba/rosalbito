@@ -154,8 +154,8 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
 <script id="data" type="application/json">__ROSALBITO_DATA__</script>
 <script>
 (function () {
-  const RAW = JSON.parse(document.getElementById('data').textContent || '{"runs":[]}');
-  const RUNS = RAW.runs || [];
+  let RAW = JSON.parse(document.getElementById('data').textContent || '{"runs":[]}');
+  let RUNS = RAW.runs || [];
   const ROLE_GROUPS = [
     { key: 'orchestrator', label: 'Orchestrator', match: r => r === 'orchestrator' },
     { key: 'implementer', label: 'Implement / write', match: r => r === 'implementer' || r === 'writer' },
@@ -198,9 +198,16 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
 
   // filters
   const uniq = a => [...new Set(a)].filter(Boolean).sort();
-  const fill = (sel, label, vals) => { sel.append(h('option', { value: '' }, label), ...vals.map(v => h('option', { value: v }, v))); };
-  fill($('f-repo'), 'All repos', uniq(RUNS.map(r => r.repo)));
-  fill($('f-risk'), 'All risk tiers', ['TRIVIAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].filter(t => RUNS.some(r => r.risk === t)));
+  const fill = (sel, label, vals) => {
+    const keep = sel.value;
+    sel.replaceChildren(h('option', { value: '' }, label), ...vals.map(v => h('option', { value: v }, v)));
+    if (vals.includes(keep)) sel.value = keep;
+  };
+  const fillFilters = () => {
+    fill($('f-repo'), 'All repos', uniq(RUNS.map(r => r.repo)));
+    fill($('f-risk'), 'All risk tiers', ['TRIVIAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].filter(t => RUNS.some(r => r.risk === t)));
+  };
+  fillFilters();
   const PREF_KEY = 'rosalbito-dashboard-filters';
   try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); for (const k of ['repo', 'risk', 'status']) if (p[k]) $('f-' + k).value = p[k]; } catch (e) {}
   const filtered = () => RUNS.filter(r =>
@@ -336,14 +343,16 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
         h('td', { class: 'num' }, n ? Math.round(x.msgs / n) : '–')); }))));
   }
 
+  const openRuns = new Set();   // expanded rows survive live re-renders
   function tableRuns(runs) {
     if (!runs.length) { $('table-runs').replaceChildren(h('div', { class: 'empty' }, 'No runs match these filters.')); return; }
     const rs = [...runs].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
     const tbody = h('tbody');
     for (const r of rs) {
-      const detail = h('tr', { class: 'detail', hidden: true }, h('td', { colspan: 12 }, agentTable(r)));
-      const tr = h('tr', { class: 'run', tabindex: 0, onclick: () => { detail.hidden = !detail.hidden; },
-        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail.hidden = !detail.hidden; } } },
+      const detail = h('tr', { class: 'detail', hidden: !openRuns.has(r.run_id) }, h('td', { colspan: 12 }, agentTable(r)));
+      const toggle = () => { detail.hidden = !detail.hidden; if (detail.hidden) openRuns.delete(r.run_id); else openRuns.add(r.run_id); };
+      const tr = h('tr', { class: 'run', tabindex: 0, 'aria-expanded': String(!detail.hidden), onclick: () => { toggle(); tr.setAttribute('aria-expanded', String(!detail.hidden)); },
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tr.click(); } } },
         h('td', { class: 'small muted', style: 'white-space:nowrap' }, (r.started_at || '').replace('T', ' ').slice(0, 16)),
         h('td', {}, r.repo),
         h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90)),
@@ -394,12 +403,36 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
         h('td', { style: 'width:35%' }, h('div', { class: 'meter' }, h('div', { style: `width:${(x.main + x.sub) / max * 100}%` }))))))));
   }
 
+  const ago = iso => { if (!iso) return 'never'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+  let reachable = true;
+  function status() {
+    const repos = uniq(RUNS.map(r => r.repo)).length;
+    const base = `${RUNS.length} runs across ${repos} repos · `;
+    if (!RAW.live) { $('subtitle').replaceChildren(base + `snapshot ${(RAW.generated_at || '').replace('T', ' ').replace('Z', ' UTC')} · run dashboard.sh --serve for live updates`); return; }
+    const [c, label] = !reachable ? ['var(--serious)', 'Server unreachable'] : RAW.error ? ['var(--warning)', `Refresh failing: ${RAW.error}`] : ['var(--good)', 'Live'];
+    $('subtitle').replaceChildren(h('span', { class: 'badge' }, h('span', { class: 'dot', style: `background:${c}` }), label),
+      ` · ${base}updated ${ago(RAW.generated_at)}${RAW.collecting ? ' · refreshing…' : ''}`);
+  }
+  if (RAW.live) {
+    const poll = async () => {
+      try {
+        const next = await (await fetch('/api/runs', { cache: 'no-store' })).json();
+        reachable = true;
+        const changed = next.version !== RAW.version;
+        RAW = next;
+        if (changed) { RUNS = RAW.runs || []; fillFilters(); render(); }
+      } catch (e) { reachable = false; }
+      status();
+    };
+    setInterval(poll, 5000);
+    setInterval(status, 1000);
+  }
+
   function render() {
     const runs = filtered();
-    const repos = uniq(RUNS.map(r => r.repo)).length;
-    $('subtitle').textContent = `${RUNS.length} runs across ${repos} repos · generated ${(RAW.generated_at || '').replace('T', ' ').replace('Z', ' UTC')}`;
+    status();
     tiles(runs); flags(runs); chartRuns(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
-    $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skill/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}, rebuilt by dashboard.sh. Local only.`;
+    $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skill/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
   }
   render();
 })();
