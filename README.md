@@ -42,7 +42,8 @@ cd ~/rosalbito && ./install.sh      # symlinks the skill, registers the guard ho
 #   in Claude Code: /plugin install ralph-loop@claude-plugins-official
 ```
 
-Restart Claude Code. Then, in any repository:
+Restart Claude Code **inside the target repository** (the loop driver's Stop hook is bound
+to the session's directory). Then:
 
 ```
 /rosalbito add an integration test that runs the CLI on the sample CSV
@@ -109,8 +110,13 @@ with full state. Never continues indefinitely.
 
 Phase 1 (MVP) is implemented and tested: entrypoint + two-axis router, persistent state +
 resume protocol, deterministic verification + evidence, PR delivery, hard caps, loop driver
-(ralph-loop Stop hook), guard hook. See `docs/` for the inventory, the reuse-vs-build
-analysis, the driver decision, the resume test, and the first real experiment.
+(ralph-loop Stop hook), guard hook.
+
+- `docs/resume-test.md` — a session was killed mid-run; a fresh one resumed from `.agent/`
+  alone and finished (11/11 assertions).
+- `docs/experiment-01.md` — first real run on a Rust payment CLI: MEDIUM tier, 25 evidence
+  lines, one decision record, one adversarial review, PR opened in 6.5 minutes with zero
+  interruptions, plus the six workflow fixes it taught.
 Phases 2–4 (acceptance wiring, reviewer prompts, reports, metrics) exist as minimal
 templates and are only expanded against failures observed in real runs.
 
