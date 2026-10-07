@@ -143,9 +143,11 @@ implement → verify → review again. Record each round in `current.md` `## Rev
 2. Report: TRIVIAL/LOW → one paragraph in the PR body. HIGH+ → `.agent/reports/<run_id>.md`
    from `templates/report.md`. Separate *what Pedro must understand* from *what the agent
    discovered*.
-3. Commit (including `.agent/` unless `ROSALBITO_COMMIT_AGENT_DIR=0`), push the feature
-   branch, open the PR with `gh pr create` following the global git rules, PR body =
-   `templates/pr-body.md`.
+3. Commit the code only. **`.agent/` is internal and never committed** (`init-run.sh`
+   excludes it via `.git/info/exclude`; `ROSALBITO_COMMIT_AGENT_DIR=1` opts in). Push the
+   feature branch, open the PR with `gh pr create` following the global git rules, PR body =
+   `templates/pr-body.md` — the evidence table and the decision summaries go *in the body*,
+   since the files stay local.
 4. `bash SKILL_DIR/scripts/finish-run.sh done --pr <url>` — writes metrics, disarms the loop.
 5. Print the completion block (`references/reports.md`) and then, on its own line,
    `<promise>ROSALBITO RUN FINISHED</promise>` so the driver lets the session stop.

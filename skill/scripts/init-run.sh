@@ -59,6 +59,10 @@ fi
 EXCL="$(git -C "$ROOT" rev-parse --git-path info/exclude)"
 mkdir -p "$(dirname "$EXCL")"
 grep -q '^\.claude/\*\.local\.md$' "$EXCL" 2>/dev/null || echo '.claude/*.local.md' >> "$EXCL"
+# run artifacts are internal: never committed to the target repo (opt in with ROSALBITO_COMMIT_AGENT_DIR=1)
+if [ "${ROSALBITO_COMMIT_AGENT_DIR:-0}" != "1" ]; then
+  grep -q '^\.agent/$' "$EXCL" 2>/dev/null || echo '.agent/' >> "$EXCL"
+fi
 
 HUMAN_REQUIRED=false
 case "$HUMAN" in decision|hard_gate) HUMAN_REQUIRED=true;; esac
