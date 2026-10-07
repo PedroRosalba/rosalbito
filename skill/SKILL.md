@@ -20,8 +20,9 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 ```
 
 - If a run exists with `status` not in `done|blocked`: **you are resuming**. Read
-  `.agent/state/current.md` fully, run `caps-check.sh`, then continue from `next_action`.
-  Do not re-classify, do not re-plan unless `next_action` says so.
+  `.agent/state/current.md` fully, run `caps-check.sh`, re-arm the driver for this session
+  (`start-loop.sh`), then continue from `next_action`. Do not re-classify, do not re-plan
+  unless `next_action` says so. Do not trust a dead session's claims: re-verify before advancing.
 - If the run is `done|blocked` and the user gave a new task: start fresh (§1).
 - `/rosalbito` with no arguments and no run → ask for the task in one line and stop.
 - `/rosalbito status` → print `state.sh show` and the last evidence lines; stop.
@@ -70,6 +71,8 @@ bash SKILL_DIR/scripts/start-loop.sh          # arms the driver (ralph-loop Stop
 ```
 
 `init-run.sh` creates `.agent/`, the feature branch, and `.agent/state/current.md`.
+`status` takes exactly these values: `classifying · understanding · acceptance · planning ·
+implementing · verifying · reviewing · documenting · pr · done · blocked`.
 Keep `current.md` truthful at every step: `state.sh set status <phase>`, `state.sh set
 next_action "<one imperative sentence>"`, `state.sh log "<what happened>"`. A fresh agent
 reading only `.agent/` must be able to continue. That is the resume protocol; it is the
@@ -114,6 +117,10 @@ bash SKILL_DIR/scripts/verify.sh <label> <command...>     # e.g. verify.sh test 
 ```
 
 Run every check `detect-checks.sh` found plus anything the acceptance contract names.
+If a repo-wide check (lint, fmt, typecheck) also fails on the base branch, do not widen the
+task to fix it and do not ignore it: record a **delta check against base** (e.g. clippy
+finding count on `master` vs branch, formatter `--check` on changed files only), write a
+decision record, and say so in the PR. Run formatters only on the files you changed.
 Each run appends a JSONL line to `.agent/evidence/<run_id>.jsonl` (timestamp, command, exit
 code, output tail). **"Done" cites evidence lines. No evidence, not done.** Failing check →
 investigate → hypothesis → fix → verify again. That loop is the normal case.

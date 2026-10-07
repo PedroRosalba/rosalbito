@@ -75,8 +75,11 @@ sed -e "s|__RUN_ID__|$RUN_ID|g" \
     -e "s|__STARTED_AT__|$STARTED|g" \
     "$SKILL_DIR/templates/current.md" > "$STATE_FILE"
 
-sed -e "s|__RUN_ID__|$RUN_ID|g" -e "s|__TASK__|$(printf '%s' "$TASK" | sed -e 's/[\/&|]/\\&/g' -e 's/"/\\"/g')|g" \
-    "$SKILL_DIR/templates/acceptance.yaml" > "$AGENT_DIR/acceptance/$RUN_ID.yaml"
+# acceptance contracts are MEDIUM+ ceremony; LOW/TRIVIAL runs do not get an empty one to fill
+if [ "$(tier_rank "$RISK")" -ge 2 ]; then
+  sed -e "s|__RUN_ID__|$RUN_ID|g" -e "s|__TASK__|$(printf '%s' "$TASK" | sed -e 's/[\/&|]/\\&/g' -e 's/"/\\"/g')|g" \
+      "$SKILL_DIR/templates/acceptance.yaml" > "$AGENT_DIR/acceptance/$RUN_ID.yaml"
+fi
 : > "$AGENT_DIR/evidence/$RUN_ID.jsonl"
 
 echo "run_id=$RUN_ID"
