@@ -48,4 +48,9 @@ tier_rank() {
   esac
 }
 
-slugify() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]+/-/g' -e 's/[^a-z0-9]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-40; }
+# lower-case, dash-separated, at most 40 chars, trimmed to a word boundary when truncated
+slugify() {
+  local s; s="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')"
+  if [ "${#s}" -gt 40 ]; then s="$(echo "$s" | cut -c1-41 | sed -e 's/-[a-z0-9]*$//')"; fi
+  echo "$s" | cut -c1-40 | sed 's/-$//'
+}

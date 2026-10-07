@@ -32,6 +32,12 @@ if ! $installed; then
   exit 0
 fi
 
+# the plugin's Stop hook reads .claude/ralph-loop.local.md relative to the SESSION's directory;
+# a run in another repo than the one Claude Code was started in will never re-enter.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ "$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)" != "$(cd "$ROOT" && pwd -P)" ]; then
+  echo "warning: session project dir ($CLAUDE_PROJECT_DIR) != repo root ($ROOT): the Stop hook will not re-enter this run." >&2
+  echo "         Start Claude Code inside the target repo for overnight runs." >&2
+fi
 mkdir -p "$ROOT/.claude"
 STATE_LOCAL="$ROOT/.claude/ralph-loop.local.md"
 if [ -f "$STATE_LOCAL" ]; then
