@@ -267,6 +267,8 @@ Track per run, as one JSONL line derived from the state files: iterations, same-
 
 Do NOT attempt to self-count tool calls or tokens — the model cannot observe those reliably. Do not build a metrics platform.
 
+*Amendment (2026-10-07):* tokens, cost and spawned agents **are** measured, but by a script, after the fact, from Claude Code's own transcripts (`usage.sh`), never by the model. A cross-repo index (`collect.sh`) and a static local page (`dashboard.sh`) make the per-repo `.agent/runs/` data visible in one place. Still no server, database or exporter.
+
 ## 15. Reports and final output
 
 Reports separate **what I need to understand** (product semantics, invariants, boundaries, tradeoffs, irreversible decisions — e.g. "payment verification is the trust boundary") from **what the agent discovered** (file locations, call graphs, implementation detail — e.g. "`verify_signature()` is in `src/payments/signature.rs:42`"). Optimize my reading time, not completeness.

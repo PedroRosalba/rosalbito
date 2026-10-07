@@ -13,6 +13,8 @@ fail() { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+export ROSALBITO_HOME="$TMP/.rosalbito" CLAUDE_PROJECTS_DIR="$TMP/.projects"   # never touch the real index or transcripts
+unset CLAUDE_CODE_SESSION_ID
 cd "$TMP" && git init -q -b main . 2>/dev/null || git init -q .
 git config user.email t@t; git config user.name t
 echo hi > README.md; git add . && git commit -qm init
@@ -112,6 +114,40 @@ check "metrics.jsonl appended"                  '[ -s .agent/runs/metrics.jsonl 
 check "loop disarmed"                           '[ ! -f .claude/ralph-loop.local.md ]'
 check "new run re-points current, keeps the old" 'bash "$S/init-run.sh" --task "second task" --risk medium >/dev/null 2>&1 && [ -d .agent/runs/$RUN ] && [ "$(bash "$S/state.sh" get task)" = "second task" ]'
 check "MEDIUM run gets an acceptance file"       '[ -f .agent/runs/current/acceptance.yaml ]'
+
+echo "usage / collect / dashboard"
+source "$SKILL_DIR/scripts/common.sh"
+RUN2="$(bash "$S/state.sh" get run_id)"; ST2="$(bash "$S/state.sh" get started_at)"
+TS="$(epoch_to_iso $(( $(iso_to_epoch "$ST2") + 2 )) | sed 's/Z$/.250Z/')"
+OLD_TS="2020-01-01T00:00:00.000Z"
+P="$CLAUDE_PROJECTS_DIR/-tmp-repo"; mkdir -p "$P/sess-a/subagents"
+U='{"input_tokens":1000,"output_tokens":1000,"cache_read_input_tokens":1000000,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_5m_input_tokens":1000,"ephemeral_1h_input_tokens":0}}'
+{
+  printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":"run_id=%s"}}\n' "$TS" "$RUN2"
+  printf '{"type":"assistant","timestamp":"%s","message":{"id":"m1","model":"claude-opus-5-5","stop_reason":"tool_use","usage":%s,"content":[{"type":"thinking","thinking":""}]}}\n' "$TS" "$U"
+  printf '{"type":"assistant","timestamp":"%s","message":{"id":"m1","model":"claude-opus-5-5","stop_reason":"tool_use","usage":%s,"content":[{"type":"tool_use","name":"Agent","input":{}}]}}\n' "$TS" "$U"
+  printf '{"type":"assistant","timestamp":"%s","message":{"id":"m0","model":"claude-opus-5-5","stop_reason":"end_turn","usage":%s,"content":[]}}\n' "$OLD_TS" "$U"
+} > "$P/sess-a.jsonl"
+TXT="$(printf 'x%.0s' $(seq 1 400))"
+printf '{"type":"assistant","isSidechain":true,"agentId":"abc","timestamp":"%s","message":{"id":"s1","model":"claude-opus-5-5","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":3,"cache_read_input_tokens":1000000},"content":[{"type":"text","text":"%s"}]}}\n' "$TS" "$TXT" > "$P/sess-a/subagents/agent-abc.jsonl"
+echo '{"agentType":"general-purpose","description":"[review:security] Security review of the diff","spawnDepth":1}' > "$P/sess-a/subagents/agent-abc.meta.json"
+u="$(bash "$S/usage.sh" --run-id "$RUN2" --start "$ST2")"
+check "usage finds the session by run_id"       'jq -e ".sessions==[\"sess-a\"]" <<< "$u" >/dev/null'
+check "one subagent, depth 1"                   'jq -e ".totals.agents_spawned==1 and .totals.max_depth==1" <<< "$u" >/dev/null'
+check "role tag honored"                        'jq -e "([.agents[].role]|sort)==[\"orchestrator\",\"review:security\"]" <<< "$u" >/dev/null'
+check "streamed chunks deduped, old msg outside window" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .messages==1 and .tools.Agent==1)" <<< "$u" >/dev/null'
+check "partial subagent output estimated"       'jq -e "(.agents[] | select(.agent_id==\"abc\") | .output_tokens==100 and .output_estimated_messages==1)" <<< "$u" >/dev/null'
+check "cost from pricing.json"                  'jq -e "(.totals.cost_usd * 1000 | round) == 431" <<< "$u" >/dev/null'
+check "metrics line carries usage + version"    'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
+bash "$S/collect.sh" "$TMP" >/dev/null
+check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ] && jq -se "map(.status)|sort==[\"classifying\",\"done\"]" "$ROSALBITO_HOME/runs.jsonl" >/dev/null'
+check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
+bash "$S/dashboard.sh" --no-collect >/dev/null
+check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
+bash "$S/state.sh" set risk HIGH
+check "HIGH run cannot finish done without report.md" '! bash "$S/finish-run.sh" done >/dev/null 2>&1 && [ "$(bash "$S/state.sh" get status)" = "classifying" ]'
+echo "# report" > .agent/runs/current/reports/report.md
+check "HIGH run finishes done with report.md"   'bash "$S/finish-run.sh" done >/dev/null 2>&1 && [ -n "$(bash "$S/state.sh" get finished_at | tr -d \"\")" ]'
 
 echo "guard hook"
 g() { printf '{"tool_name":"Bash","tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$1" | jq -Rs .)" "$TMP" | bash "$HOOK" >/dev/null 2>&1; echo $?; }

@@ -82,15 +82,16 @@ default even for CRITICAL work. `decision` fires only for the triggers in
 ```
 skill/                      the Claude Code skill (symlinked to ~/.claude/skills/rosalbito)
   SKILL.md                  thin orchestrator (~200 lines): dispatch, classify, loop, understand and grill modes
-  config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/)
+  config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/), pricing.json
   scripts/                  init-context, init-run, state, verify, detect-checks, classify-paths,
-                            caps-check, start-loop, finish-run, metrics, evidence-summary
+                            caps-check, start-loop, finish-run, metrics, evidence-summary,
+                            usage, collect, dashboard
   hooks/rosalbito-guard.sh  PreToolUse hard gate
-  templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md
+  templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md, dashboard.html
   references/               routing, driver, reviews, understanding, reports, state-schema
 skills/telemetry/           generic telemetry-engineering skill (model-invoked; symlinked to ~/.claude/skills/telemetry)
 install.sh                  symlinks + hook registration (idempotent, backs up settings.json)
-tests/run.sh                78 deterministic checks for scripts and the hook
+tests/run.sh                90 deterministic checks for scripts and the hook
 tests/resume-test.sh        kill-a-session-mid-run test (real model calls)
 docs/                       spec, inventory, reuse-vs-build, driver decision
 ```
@@ -111,6 +112,28 @@ summaries; the files stay local for Pedro and the agents. Matt Pocock's `grillin
 `domain-modeling` hard-code `CONTEXT.md` and `docs/adr/`; `init-context.sh` turns both into
 excluded symlinks into `context/`, so they land in the right place without the skills knowing.
 Run write-ups and experiment logs are kept locally too, not in this repository.
+
+## Observability
+
+```bash
+bash skill/scripts/dashboard.sh --open      # or /rosalbito dashboard
+```
+
+Every run, in every repo, on one local page (`~/.rosalbito/dashboard.html`): outcome, wall
+time, iterations, checks, review rejections, subagents spawned, and API-equivalent cost per
+agent role and per token kind, plus a "Needs attention" list (abandoned runs, HIGH runs
+without a report, runs with no transcript, loops). The numbers are read after the fact:
+
+- `usage.sh` parses Claude Code's own transcripts (`~/.claude/projects/<dir>/<session>.jsonl`
+  and `<session>/subagents/agent-*.jsonl` + `.meta.json`), finds a run's sessions by the
+  `run_id` it printed (or the `sessions` recorded in `state.md`), keeps the messages inside
+  the run's time window, and prices them with `config/pricing.json`. Subagent transcripts often
+  keep only partial output counts; those are estimated from visible text and flagged.
+- `collect.sh` rebuilds `~/.rosalbito/runs.jsonl` from every repo with an `.agent/` (registered
+  by init-run/finish-run, or found under `$HOME`), finished or not.
+- `dashboard.sh` renders that index into one self-contained HTML file. Nothing leaves the machine.
+
+On a Claude subscription the cost is a comparison figure, not the invoice.
 
 ## Hard caps
 
