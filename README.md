@@ -97,8 +97,9 @@ Inside a target repository, a run leaves:
   metrics.jsonl      one line per run
 ```
 
-Committed on the feature branch so the PR carries its own audit trail
-(`ROSALBITO_COMMIT_AGENT_DIR=0` to keep it local).
+Internal and never committed: `init-run.sh` excludes `.agent/` through `.git/info/exclude`,
+so the target repo is untouched. The PR body carries the evidence table and the decision
+summaries; the files stay local for Pedro and the agents (`ROSALBITO_COMMIT_AGENT_DIR=1` opts in).
 
 ## Hard caps
 

@@ -38,6 +38,7 @@ bash "$S/state.sh" log "hello log"
 check "log appends"                             'grep >/dev/null "hello log" .agent/state/current.md'
 check "frontmatter still well-formed"           '[ "$(grep -c "^---$" .agent/state/current.md)" -eq 2 ]'
 check "driver state file excluded from git"     'grep >/dev/null ".claude/\*.local.md" .git/info/exclude'
+check ".agent/ excluded from git by default"    'grep >/dev/null "^.agent/$" .git/info/exclude && [ -z "$(git status --porcelain | grep .agent)" ]'
 
 echo "verify / evidence"
 RUN="$(bash "$S/state.sh" get run_id)"
