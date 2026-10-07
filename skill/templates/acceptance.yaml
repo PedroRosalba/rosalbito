@@ -1,0 +1,12 @@
+# Acceptance contract for run __RUN_ID__
+# Rule: every criterion names its verification method. Unverifiable criteria are not allowed.
+# verify kinds:
+#   { command: "<shell command with exit code>" }   -> run through verify.sh, cite evidence
+#   { reviewer: correctness|security|architecture } -> fresh-context subagent verdict
+#   { human: true }                                 -> Pedro checks at PR review (visibility)
+task: "__TASK__"
+dimensions: [functional]   # only the ones the task needs: functional, security, architecture, testing, operational
+acceptance:
+  - criterion: ""
+    dimension: functional
+    verify: { command: "" }
