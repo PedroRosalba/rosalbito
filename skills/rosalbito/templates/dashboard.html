@@ -115,6 +115,7 @@ th.sortable button:focus-visible { outline: 2px solid var(--accent); outline-off
 th[aria-sort="descending"] button::after { content: " ↓"; }
 th[aria-sort="ascending"] button::after { content: " ↑"; }
 .headline { font-size: 18px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+.chip { display: inline-block; font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
 .kindbar { display: flex; gap: 2px; height: 10px; min-width: 80px; margin-bottom: 3px; }
 .kindbar .seg:first-child { border-radius: 3px 0 0 3px; }
 .kindbar .seg:last-child { border-radius: 0 3px 3px 0; }
@@ -182,11 +183,11 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
 
   <div class="grid2">
     <section class="card" data-section="kinds">
-      <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs</p></div></div>
+      <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs; shared-session usage counted once</p></div></div>
       <div class="card-body"><div id="chart-kinds"></div></div>
     </section>
     <section class="card" data-section="roles">
-      <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs</p></div></div>
+      <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs; shared-session usage counted once</p></div></div>
       <div class="card-body"><div class="scroll" id="table-roles"></div></div>
     </section>
   </div>
@@ -197,7 +198,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   </section>
 
   <section class="card" data-section="tools" data-default="closed">
-    <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs</p></div></div>
+    <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs; shared-session usage counted once</p></div></div>
     <div class="card-body"><div class="scroll" id="table-tools"></div></div>
   </section>
 
@@ -240,6 +241,11 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   const sum = (a, f) => a.reduce((t, x) => t + (f(x) || 0), 0);
   const cost = r => r.usage && r.usage.totals ? r.usage.totals.cost_usd : null;
   const agents = r => (r.usage && r.usage.agents) || [];
+  // runs that read the same session over overlapping windows (collect.sh): identical usage counts once
+  const counted = r => !r.usage_duplicate_of;
+  const sharedNote = r => r.usage_duplicate_of ? `same session window as ${r.usage_duplicate_of}: identical usage, counted once in totals`
+    : (r.usage_overlaps || []).length ? `shares a session window with ${r.usage_overlaps.join(', ')}: overlapping messages count in each` : null;
+  const sharedBadge = r => sharedNote(r) ? h('span', { class: 'chip', title: sharedNote(r) }, r.usage_duplicate_of ? 'shared usage' : 'shared session') : '';
   const isOpen = r => r.status !== 'done' && r.status !== 'blocked';
   const statusKey = r => r.status === 'done' ? 'done' : r.status === 'blocked' ? 'blocked' : r.stale ? 'stale' : 'open';
   const STATUS = {
@@ -302,17 +308,18 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   function tiles(runs) {
-    const fin = runs.filter(r => !isOpen(r));
+    const fin = runs.filter(r => !isOpen(r) && counted(r));
     const done = runs.filter(r => r.status === 'done');
-    const priced = runs.filter(r => cost(r) != null);
+    const priced = runs.filter(r => cost(r) != null && counted(r));
+    const dup = runs.filter(r => !counted(r)).length;
     const totalCost = sum(priced, cost);
-    const spawned = sum(runs, r => r.usage && r.usage.totals.agents_spawned);
+    const spawned = sum(runs.filter(counted), r => r.usage && r.usage.totals.agents_spawned);
     const rounds = sum(runs, r => r.review_rounds), rej = sum(runs, r => r.review_rejections);
     const cr = sum(priced, r => r.usage.totals.cache_read_tokens), cw = sum(priced, r => r.usage.totals.cache_write_tokens + r.usage.totals.input_tokens);
     const T = (label, value, note) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'note' }, note));
     $('tiles').replaceChildren(
       T('Runs', runs.length, `${done.length} done · ${runs.filter(r => r.status === 'blocked').length} blocked · ${runs.filter(isOpen).length} open`),
-      T('Estimated cost', usd(totalCost), `${priced.length} runs with transcripts`),
+      T('Estimated cost', usd(totalCost), `${priced.length} runs with transcripts` + (dup ? ` · ${dup} shared-usage run${dup === 1 ? '' : 's'} counted once` : '')),
       T('Median cost, finished run', usd(median(fin.map(cost).filter(v => v != null))), `median wall ${mins(median(fin.map(r => r.wall_minutes).filter(v => v != null)))}`),
       T('Subagents spawned', spawned, runs.length ? `${(spawned / runs.length).toFixed(1)} per run` : ''),
       T('Review rejections', rounds ? pct(rej / rounds) : '–', `${rej} of ${rounds} review rounds`),
@@ -332,6 +339,8 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       else if (r.usage.totals.unpriced_models && r.usage.totals.unpriced_models.length) add('warning', `Unpriced model in ${name}`, `${r.usage.totals.unpriced_models.join(', ')}: add it to config/pricing.json.`);
       if (r.same_failure_max >= 3) add('serious', `Loop detected: ${name}`, `same check failed ${r.same_failure_max} times in a row.`);
       if (r.legacy) add('info', `Legacy layout: ${name}`, 'Recovered from an old metrics.jsonl; state and evidence files are gone.');
+      if (r.usage_duplicate_of) add('warning', `Usage shared with another run: ${name}`, `Ran in the same session window as ${r.usage_duplicate_of}, so the transcripts cannot tell their usage apart: both show the same tokens and cost, and totals count it once.`);
+      else if ((r.usage_overlaps || []).length && !runs.some(o => o.usage_duplicate_of === r.run_id)) add('info', `Overlapping session window: ${name}`, `Shares a session with ${r.usage_overlaps.join(', ')} over overlapping time; messages in the overlap count in each run.`);
     }
     const noVersion = runs.filter(r => !r.harness_version && !r.legacy);
     if (noVersion.length) add('info', `${noVersion.length} run${noVersion.length === 1 ? '' : 's'} without a harness version`, 'Started before init-run recorded harness_version; they cannot be compared across harness versions.');
@@ -425,7 +434,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
         onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tr.click(); } } },
         h('td', { class: 'small muted', style: 'white-space:nowrap' }, (r.started_at || '').replace('T', ' ').slice(0, 16)),
         h('td', {}, r.repo),
-        h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90)),
+        h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90), ' ', sharedBadge(r)),
         h('td', {}, r.risk),
         h('td', {}, badge(r)),
         h('td', { class: 'num' }, mins(r.wall_minutes)),
@@ -566,7 +575,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
     tableTokens(withTok);
   }
   const TOKEN_COLS = [
-    { key: 'run', label: 'Run', get: r => `${r.repo} · ${r.task || r.run_id}`, show: r => h('span', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 44)) },
+    { key: 'run', label: 'Run', get: r => `${r.repo} · ${r.task || r.run_id}`, show: r => h('span', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 44), ' ', sharedBadge(r)) },
     { key: 'model', label: 'Model(s)', get: r => domModel(r) || '', show: r => Object.keys(totals(r).model_mix || {}).filter(m => m !== '<synthetic>').map(shortModel).join(', ') || '–' },
     { key: 'effort', label: 'Effort', get: r => EFFORT_R[domEffort(r)] || 0, show: r => h('span', { title: Object.entries(totals(r).effort_mix || {}).map(([k, v]) => `${k} ${v}`).join(', ') }, domEffort(r) || 'unknown') },
     { key: 'total', label: 'Total tokens', num: true, get: totalTokens, show: r => tok(totalTokens(r)) },
@@ -718,7 +727,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   function render() {
     const runs = filtered();
     status();
-    tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); verification(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
+    tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); verification(runs); chartKinds(runs.filter(counted)); tableRoles(runs.filter(counted)); tableRuns(runs); tableTools(runs.filter(counted));
     $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skills/rosalbito/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
   }
   render();
