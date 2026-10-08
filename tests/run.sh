@@ -101,6 +101,7 @@ if [ -f .claude/ralph-loop.local.md ]; then
   check "ralph state has promise"               'grep >/dev/null "completion_promise: \"ROSALBITO RUN FINISHED\"" .claude/ralph-loop.local.md'
   check "ralph state has session id"            'grep >/dev/null "session_id: test-session" .claude/ralph-loop.local.md'
   check "ralph state max_iterations from caps"  'grep >/dev/null "max_iterations: 25" .claude/ralph-loop.local.md'
+  check "loop prompt names the real SKILL_DIR"   'grep -F >/dev/null "bash \"$SKILL_DIR/scripts/caps-check.sh\"" .claude/ralph-loop.local.md && ! grep >/dev/null "SKILL_DIR = the rosalbito" .claude/ralph-loop.local.md'
   check "driver recorded"                       '[ "$(bash "$S/state.sh" get driver)" = "ralph-loop" ]'
 else
   echo "  (ralph-loop not installed here: driver degraded path exercised)"
@@ -153,6 +154,23 @@ if command -v node >/dev/null && command -v curl >/dev/null; then
   check "live server: page has live data inlined"  'curl -s "localhost:$PORT/" | grep >/dev/null "\"live\":true"'
   check "live server: rejects non-local Host"      '[ "$(curl -s -o /dev/null -w "%{http_code}" -H "Host: evil.example" "localhost:$PORT/api/runs")" = 403 ]'
   kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+  # --install-service against a throwaway HOME and a stub launchctl: nothing real is installed
+  mkdir -p "$TMP/bin" "$TMP/svchome"; printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/launchctl"; chmod +x "$TMP/bin/launchctl"
+  PL="$TMP/svchome/Library/LaunchAgents/com.rosalbito.dashboard.plist"
+  HOME="$TMP/svchome" PATH="$TMP/bin:$PATH" bash "$S/dashboard.sh" --install-service >/dev/null 2>&1
+  check "install-service runs a copy, not the skill dir" 'grep -F >/dev/null "<string>$ROSALBITO_HOME/service/scripts/dashboard-server.mjs</string>" "$PL" && ! grep -F >/dev/null "$SKILL_DIR" "$PL" && [ -f "$ROSALBITO_HOME/service/templates/dashboard.html" ] && [ -f "$ROSALBITO_HOME/service/config/pricing.json" ]'
+  PORT=$(( 20000 + RANDOM % 20000 ))
+  ROSALBITO_PORT=$PORT ROSALBITO_REFRESH=3600 node "$ROSALBITO_HOME/service/scripts/dashboard-server.mjs" >/dev/null 2>&1 & SRV=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s "localhost:$PORT/api/runs" >/dev/null 2>&1 && break; perl -e 'select(undef,undef,undef,0.3)'; done
+  check "copied server serves the index"          'curl -s "localhost:$PORT/api/runs" | jq -e ".live==true and (.runs|length)==2" >/dev/null'
+  kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+  HOME="$TMP/svchome" PATH="$TMP/bin:$PATH" bash "$S/dashboard.sh" --uninstall-service >/dev/null 2>&1
+  check "uninstall-service removes plist and copy" '[ ! -e "$PL" ] && [ ! -e "$ROSALBITO_HOME/service" ]'
+  mkdir -p "$ROSALBITO_HOME/service" && echo keep > "$ROSALBITO_HOME/service/user-file"
+  check "install-service refuses a service dir it did not create" '! HOME="$TMP/svchome" PATH="$TMP/bin:$PATH" bash "$S/dashboard.sh" --install-service >/dev/null 2>&1 && [ -f "$ROSALBITO_HOME/service/user-file" ]'
+  HOME="$TMP/svchome" PATH="$TMP/bin:$PATH" bash "$S/dashboard.sh" --uninstall-service >/dev/null 2>&1
+  check "uninstall-service leaves a dir it did not create" '[ -f "$ROSALBITO_HOME/service/user-file" ]'
+  rm -rf "$ROSALBITO_HOME/service"
 fi
 bash "$S/state.sh" set risk HIGH
 check "HIGH run cannot finish done without report.md" '! bash "$S/finish-run.sh" done >/dev/null 2>&1 && [ "$(bash "$S/state.sh" get status)" = "classifying" ]'
@@ -191,6 +209,11 @@ check "allow cargo test"                        'allowed "cargo test"'
 check "allow git push --force-with-lease? no"   'denied "git push --force-with-lease origin feature/x"'
 check "deny git branch -D main"                 'denied "git branch -D main"'
 check "ignores non-Bash tool input"             '[ "$(printf "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"x\"}}" | bash "$HOOK" >/dev/null 2>&1; echo $?)" -eq 0 ]'
+
+echo "packaging (for details run each script directly)"
+check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
+check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
+check "plugin manifests name the rosalbito plugin" 'jq -e ".name==\"rosalbito\"" "$HERE/.claude-plugin/plugin.json" >/dev/null && jq -e ".plugins[0].name==\"rosalbito\"" "$HERE/.claude-plugin/marketplace.json" >/dev/null'
 
 echo
 echo "passed=$PASS failed=$FAIL"
