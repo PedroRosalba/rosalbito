@@ -108,6 +108,17 @@ else
   check "driver none recorded"                  '[ "$(bash "$S/state.sh" get driver)" = "none" ]'
 fi
 check "metrics line is JSON"                    'bash "$S/metrics.sh" | jq -e ".iterations==3 and .checks_run==5 and .checks_failed==3" >/dev/null'
+# fix cycles are fail -> pass transitions; exit null is unknown; "x-2" links to "x" only when "x" exists
+FC="$TMP-fc"; mkdir -p "$FC/.agent/runs/fc"
+printf -- '---\nrun_id: fc\nstatus: done\nstarted_at: 2021-01-01T00:00:00Z\nupdated_at: 2021-01-01T00:10:00Z\n---\n' > "$FC/.agent/runs/fc/state.md"
+for e in 'a 1 A' 'a 0 A' 'a 1 A' 'a 1 A' 'a 0 B' 'b 1 X' 'b null X' 'b 0 X' 'c null X' 'c 0 X' 'd 1 X' 'e 0 X' 'e-2 1 X' 'e-2 0 X' 'f-2 1 X' 'f-2 0 X'; do
+  set -- $e; printf '{"label":"%s","exit":%s,"command":"%s"}\n' "$1" "$2" "$3"
+done > "$FC/.agent/runs/fc/evidence.jsonl"
+fcm="$(cd "$FC" && ROSALBITO_NO_USAGE=1 bash "$S/metrics.sh" --run "$FC/.agent/runs/fc")"
+check "metrics: fix cycles count fail->pass transitions" 'jq -e ".fix_cycles==5 and .fix_cycles_command_changed==1 and .fix_cycle_labels==[\"a\",\"b\",\"e\",\"f-2\"]" <<< "$fcm" >/dev/null'
+check "metrics: exit null is unknown, not a failure" 'jq -e "(.check_labels[] | select(.label==\"b\") | .failed==1 and .runs==3) and (.check_labels[] | select(.label==\"c\") | .failed==0)" <<< "$fcm" >/dev/null'
+rm -rf "$FC"
+check "metrics: fail-then-pass label is a fix cycle" 'bash "$S/metrics.sh" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"] and (.check_labels|map(select(.label==\"boom\"))[0] | .runs==4 and .failed==3 and .last_exit==0)" >/dev/null'
 bash "$S/finish-run.sh" done --pr https://example.com/pr/1 >/dev/null; rc=$?
 check "finish-run done"                         '[ $rc -eq 0 ] && [ "$(bash "$S/state.sh" get status)" = "done" ]'
 check "pr recorded"                             '[ "$(bash "$S/state.sh" get pr)" = "https://example.com/pr/1" ]'
@@ -139,12 +150,146 @@ check "role tag honored"                        'jq -e "([.agents[].role]|sort)=
 check "streamed chunks deduped, old msg outside window" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .messages==1 and .tools.Agent==1)" <<< "$u" >/dev/null'
 check "partial subagent output estimated"       'jq -e "(.agents[] | select(.agent_id==\"abc\") | .output_tokens==100 and .output_estimated_messages==1)" <<< "$u" >/dev/null'
 check "cost from pricing.json"                  'jq -e "(.totals.cost_usd * 1000 | round) == 431" <<< "$u" >/dev/null'
-check "metrics line carries usage + version"    'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
+# effort, thinking time and context sizes: a separate session, picked by --sessions only
+mkdir -p "$P/sess-b/subagents"
+am() {  # am <ts> <id> <uuid> <model> <effort|null> <thinking_ms|null> <input> <cache_write> <cache_read> <output>
+  local e='null'; [ "$5" = null ] || e="\"$5\""
+  printf '{"type":"assistant","timestamp":"%s","uuid":"%s","effort":%s,"perTurnEffort":%s,"thinkingDurationMs":%s,"message":{"id":"%s","model":"%s","stop_reason":"end_turn","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s},"content":[]}}\n' \
+    "$1" "$3" "$e" "$e" "$6" "$2" "$4" "$7" "$8" "$9" "${10}"
+}
+{
+  am 2021-01-01T00:00:01.000Z e1 u1 claude-opus-5-5 high 1000 10 100 1000 50
+  am 2021-01-01T00:00:01.000Z e1 u2 claude-opus-5-5 high null 10 100 1000 50      # 2nd chunk of e1
+  am 2021-01-01T00:00:02.000Z e2 u3 claude-opus-5-5 high 500 20 0 3000 30
+  am 2021-01-01T00:00:03.000Z e3 u4 claude-opus-5-5 medium 700 5 0 2000 10
+  am 2021-01-01T00:00:03.000Z e3 u4 claude-opus-5-5 medium 700 5 0 2000 10       # duplicated line: thinking counted once
+  am 2021-01-01T00:00:04.000Z e4 u5 claude-sonnet-5-5 null null 1 0 100 1
+} > "$P/sess-b.jsonl"
+am 2021-01-01T00:00:02.000Z x1 v1 claude-opus-5-5 xhigh 250 0 0 500 4 | sed 's/^{/{"isSidechain":true,"agentId":"def",/' > "$P/sess-b/subagents/agent-def.jsonl"
+echo '{"agentType":"general-purpose","description":"[implementer] fixture","spawnDepth":1}' > "$P/sess-b/subagents/agent-def.meta.json"
+ue="$(bash "$S/usage.sh" --run-id fixture-effort --start 2021-01-01T00:00:00Z --end 2021-01-01T00:01:00Z --sessions sess-b)"
+check "usage: effort per message, dominant per agent" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .effort==\"high\" and .effort_messages=={\"high\":2,\"medium\":1,\"unknown\":1}) and (.agents[] | select(.agent_id==\"def\") | .effort==\"xhigh\")" <<< "$ue" >/dev/null'
+check "usage: thinking ms summed, duplicate lines once" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .thinking_ms==2200) and .totals.thinking_ms==2450" <<< "$ue" >/dev/null'
+check "usage: first and peak context per agent" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .first_context_tokens==1110 and .peak_context_tokens==3020) and (.agents[] | select(.agent_id==\"def\") | .first_context_tokens==500)" <<< "$ue" >/dev/null'
+check "usage: total tokens per agent and run"   'jq -e "(.agents[] | select(.agent_id==\"main\") | .total_tokens==6327) and .totals.total_tokens==6831" <<< "$ue" >/dev/null'
+check "usage: effort mix and model mix totals"  'jq -e ".totals.effort_mix=={\"high\":2,\"medium\":1,\"unknown\":1,\"xhigh\":1} and .totals.model_mix=={\"claude-opus-5-5\":6729,\"claude-sonnet-5-5\":102}" <<< "$ue" >/dev/null'
+check "usage: existing fields unchanged"         'jq -e ".totals.messages==5 and .totals.input_tokens==36 and .totals.cache_write_tokens==100 and .totals.cache_read_tokens==6600 and .totals.output_tokens==95 and (.agents|map(has(\"_model_tokens\"))|any|not)" <<< "$ue" >/dev/null'
+# fork subagents replay their parent's lines (same uuid) and re-log the fork-point message: counted once
+mkdir -p "$P/sess-c/subagents"
+{ echo '{"type":"user","timestamp":"2020-12-31T23:00:00.000Z","message":{"role":"user","content":"earlier work"}}'   # session began an hour before the run
+  am 2021-01-01T00:00:01.000Z c1 k1 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:02.000Z c2 k2 claude-opus-5-5 high 100 10 0 1000 10; } > "$P/sess-c.jsonl"
+{ am 2021-01-01T00:00:01.000Z c1 k1 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:02.000Z c2 k9 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:03.000Z f1 k3 claude-opus-5-5 high 100 10 0 1000 10; } | sed 's/^{/{"isSidechain":true,"agentId":"fk",/' > "$P/sess-c/subagents/agent-fk.jsonl"
+echo '{"agentType":"fork","description":"fork of main","spawnDepth":1}' > "$P/sess-c/subagents/agent-fk.meta.json"
+uf="$(bash "$S/usage.sh" --run-id fixture-fork --start 2021-01-01T00:00:00Z --end 2021-01-01T00:01:00Z --sessions sess-c)"
+check "usage: fork replay counted once, for its owner" 'jq -e ".totals.messages==3 and .totals.thinking_ms==300 and (.agents[] | select(.agent_id==\"fk\") | .messages==1) and (.agents[] | select(.agent_id==\"main\") | .messages==2)" <<< "$uf" >/dev/null'
+check "usage: mid-session start flagged on the orchestrator" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .mid_session==true and .session_started_at==\"2020-12-31T23:00:00.000Z\")" <<< "$uf" >/dev/null && jq -e "(.agents[] | select(.agent_id==\"main\") | .mid_session==false) and (.agents[] | select(.agent_id==\"def\") | .mid_session==null)" <<< "$ue" >/dev/null'
+check "usage: run-level peak context"           'jq -e ".totals.peak_context_tokens==3020" <<< "$ue" >/dev/null'
+check "metrics line carries usage + version"   'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
+# +4 -1 in 2 files on the run branch, committed (by date) after the second run started
+CD="$(epoch_to_iso $(( $(iso_to_epoch "$ST2") + 5 )))"
+printf 'a\nb\nc\n' > feature.txt && echo bye > README.md && git add feature.txt README.md \
+  && GIT_COMMITTER_DATE="$CD" GIT_AUTHOR_DATE="$CD" git commit -qm feat feature.txt README.md
 bash "$S/collect.sh" "$TMP" >/dev/null
 check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ] && jq -se "map(.status)|sort==[\"classifying\",\"done\"]" "$ROSALBITO_HOME/runs.jsonl" >/dev/null'
 check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
+IX() { jq -c --arg r "$1" "select(.run_id==\$r)" "$ROSALBITO_HOME/runs.jsonl"; }
+check "collect: input size from task and first context" 'IX "$RUN2" | jq -e ".input_size.task_chars==11 and .input_size.first_context_tokens==1002000" >/dev/null'
+check "collect: real branch diff since the run started" 'IX "$RUN2" | jq -e ".input_size.diff | .files==2 and .added==4 and .removed==1 and .branch==\"feature/add-ci-badge-to-readme\" and .base_branch==.branch and .head==\"$(git rev-parse HEAD)\" and .base==\"$(git rev-parse HEAD~1)\"" >/dev/null'
+check "collect: fix cycles carried into the index" 'IX "$RUN" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"]" >/dev/null'
+jq -c 'if .input_size.diff then .input_size.diff.files=99 else . end' "$ROSALBITO_HOME/runs.jsonl" > "$TMP/ix" && mv "$TMP/ix" "$ROSALBITO_HOME/runs.jsonl"
+check "collect: numstat reused while base and head are unchanged" 'bash "$S/collect.sh" "$TMP" >/dev/null && IX "$RUN2" | jq -e ".input_size.diff.files==99" >/dev/null'
+sed -i.bak 's#^branch: .*#branch: feature/gone#' ".agent/runs/$RUN/state.md" && rm -f ".agent/runs/$RUN/state.md.bak"
+check "collect: missing branch gives diff null, not a guess" 'bash "$S/collect.sh" --full "$TMP" >/dev/null && IX "$RUN" | jq -e ".input_size.diff==null and .input_size.task_chars==22" >/dev/null'
+rm -f "$ROSALBITO_HOME/runs.jsonl" && bash "$S/collect.sh" "$TMP" >/dev/null
+check "collect: a fresh index measures the diff again" 'IX "$RUN2" | jq -e ".input_size.diff.files==2" >/dev/null'
+# diff edge cases in a second throwaway repo, indexed into its own ROSALBITO_HOME
+G="$TMP-git"; mkdir -p "$G" && git -C "$G" init -q -b main 2>/dev/null || git -C "$G" init -q "$G"
+git -C "$G" config user.email t@t; git -C "$G" config user.name t
+gc() {  # gc <iso date> <file> <lines>: commit <lines> lines to <file> at that date
+  mkdir -p "$G/$(dirname "$2")"; seq 1 "$3" >> "$G/$2"; git -C "$G" add "$2"
+  GIT_COMMITTER_DATE="$1" GIT_AUTHOR_DATE="$1" git -C "$G" commit -qm "$2"
+}
+mkrun() {  # mkrun <id> <branch> <base> <started> <finished>
+  mkdir -p "$G/.agent/runs/$1"
+  printf -- '---\nrun_id: %s\ntask: "%s"\nstatus: done\nbranch: %s\nbase_branch: %s\nstarted_at: %s\nupdated_at: %s\nfinished_at: %s\n---\n' "$1" "$1" "$2" "$3" "$4" "$5" "$5" > "$G/.agent/runs/$1/state.md"
+}
+gc 2021-01-01T00:00:00Z init.txt 1
+git -C "$G" checkout -q -b feat/earlier; gc 2021-01-01T01:00:00Z earlier.txt 10     # work already on the branch the run was cut from
+git -C "$G" checkout -q -b feature/cut; gc 2021-01-01T02:30:00Z tests/x.test.sh 2   # the run's own work
+mkrun r-cut feature/cut main 2021-01-01T02:00:00Z 2021-01-01T03:00:00Z               # state says main: wrong base
+git -C "$G" checkout -q main; git -C "$G" checkout -q -b feature/rewritten; gc 2021-01-01T00:30:00Z old.txt 3
+git -C "$G" checkout -q -b tmp-run; gc 2021-01-01T04:30:00Z run.txt 5
+mkrun r-rewritten feature/rewritten main 2021-01-01T04:00:00Z 2021-01-01T05:00:00Z
+git -C "$G" checkout -q feature/rewritten; git -C "$G" merge -q --ff-only tmp-run        # the run's commit is on the branch...
+mkrun r-idle main main 2021-01-01T06:00:00Z 2021-01-01T07:00:00Z                       # branch == base, nothing committed
+GH="$TMP/.rosalbito-git"; gx() { ROSALBITO_HOME="$GH" ROSALBITO_NO_USAGE=1 bash "$S/collect.sh" --full "$G" >/dev/null; jq -c --arg r "$1" 'select(.run_id==$r) | .input_size.diff' "$GH/runs.jsonl"; }
+check "collect: a branch cut from another branch counts only the run's work" '[ "$(gx r-cut | jq -c "[.files, .added, .removed, .test_files, .basis]")" = "[1,2,0,1,\"since run start\"]" ]'
+check "collect: test_files_touched comes from the run's diff" 'jq -e "select(.run_id==\"r-cut\") | .test_files_touched==1" "$GH/runs.jsonl" >/dev/null'
+check "collect: the run's commit on its branch is measured" '[ "$(gx r-rewritten | jq -c "[.files, .added]")" = "[1,5]" ]'
+git -C "$G" reset -q --hard HEAD~1                                                     # ...until the branch is rewritten
+check "collect: a branch rewritten after the run gives diff null" '[ "$(gx r-rewritten)" = null ] && jq -e "select(.run_id==\"r-rewritten\") | .test_files_touched==null" "$GH/runs.jsonl" >/dev/null'
+check "collect: branch == base with nothing committed gives null, not 0" '[ "$(gx r-idle)" = null ]'
+# origin/ ahead of the local branch: the fresher copy is measured
+git -C "$G" checkout -q feature/cut && gc 2021-01-01T02:45:00Z tests/y.test.sh 3
+git -C "$G" update-ref refs/remotes/origin/feature/cut HEAD && git -C "$G" reset -q --hard HEAD~1 && git -C "$G" checkout -q main
+check "collect: origin/ ahead of the local branch is measured" '[ "$(gx r-cut | jq -c "[.files, .added, .test_files]")" = "[2,5,2]" ]'
+# runs reading the same session over overlapping windows: flagged, identical usage counted once
+{ am 2021-01-01T08:10:00.000Z sh1 q1 claude-opus-5-5 high 0 10 0 1000 10
+  am 2021-01-01T09:30:00.000Z sh2 q2 claude-opus-5-5 high 0 10 0 2000 10; } > "$P/sess-shared.jsonl"
+for r in 'r-s1 08:00 09:00' 'r-s2 08:00 09:00' 'r-s3 08:30 10:00'; do
+  set -- $r; mkrun "$1" main main "2021-01-01T$2:00Z" "2021-01-01T$3:00Z"
+  sed -i.bak 's/^status: done$/status: done\nsessions: "sess-shared"/' "$G/.agent/runs/$1/state.md" && rm -f "$G/.agent/runs/$1/state.md.bak"
+done
+ROSALBITO_HOME="$GH" bash "$S/collect.sh" --full "$G" >/dev/null
+SH() { jq -c --arg r "$1" 'select(.run_id==$r) | [.usage.totals.messages, .usage_overlaps, .usage_duplicate_of]' "$GH/runs.jsonl"; }
+check "collect: shared-session runs flagged, identical usage marked duplicate" '[ "$(SH r-s1)" = "[1,[\"r-s2\",\"r-s3\"],null]" ] && [ "$(SH r-s2)" = "[1,[\"r-s1\",\"r-s3\"],\"r-s1\"]" ] && [ "$(SH r-s3)" = "[1,[\"r-s1\",\"r-s2\"],null]" ]'
+check "collect: runs in other sessions or windows are not flagged" '[ "$(jq -c "select(.run_id==\"r-cut\") | [.usage_overlaps, .usage_duplicate_of]" "$GH/runs.jsonl")" = "[[],null]" ]'
+rm -rf "$G"
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
+check "dashboard has Tokens and Verification, Tool calls folded" 'grep >/dev/null "data-section=\"tokens\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"verification\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"tools\" data-default=\"closed\"" "$ROSALBITO_HOME/dashboard.html"'
+if command -v node >/dev/null; then   # the dashboard's check-kind heuristic, extracted and run as is
+  cat > "$TMP/kinds-test.js" <<'JS'
+const html = require('fs').readFileSync(process.argv[2], 'utf8');
+const block = html.split('// <check-kinds>')[1].split('// </check-kinds>')[0].replace(/^[^\n]*\n/, '');
+const kindOf = new Function(block + '; return kindOf;')();
+const cases = [
+  ['adr-002', 'test -f docs/adr/002.md && ! grep -rni tiktok README.md', 'other'],
+  ['compat-link', 'test -L skill && test -x skill/x.sh && echo ok', 'other'],
+  ['hooks-json', `jq -e '.hooks[] | select(.command|test("X"))' hooks/hooks.json`, 'other'],
+  ['orch-tiktok', 'bash -c ! grep -rni tiktok src tests README.md', 'other'],
+  ['prepush:full-suite', `grep -q '^exit=0' push.log && awk '{print}' push.log`, 'other'],
+  ['prepush:full-suite-2', `grep -E '^ [0-9]+ (pass|fail)' push.log | awk '{s[$2]+=$1} END {print s["pass"]}'`, 'other'],
+  ['quoted-runner', `bash -c 'cd /x && bun test src/'`, 'test'],
+  ['grep-tests', 'grep -r foo tests/x.test.ts', 'other'],
+  ['if-test', '[ -f a ] && [[ -d b ]] && echo ok', 'other'],
+  ['suite', 'bash tests/run.sh', 'test'],
+  ['gate', 'scripts/test.sh --keep', 'test'],
+  ['db', 'DATABASE_URL=postgres://x cargo test --features db', 'test'],
+  ['guards', 'yarn test:guards', 'test'],
+  ['final-run-many', 'npx nx run-many -t lint,test,build -p api', 'test'],
+  ['cli', 'cd packages/cli && bun test', 'test'],
+  ['unreachable', 'bash -c ! DATABASE_URL=x cargo test', 'test'],
+  ['red-green-new-tests', 'bash /tmp/redgreen.sh', 'test'],
+  ['review-test', 'cargo test', 'test'],
+  ['lint', 'cargo clippy --all-targets', 'lint'],
+  ['fix1:biome-changed', 'bunx biome check src', 'lint'],
+  ['ui-tsc', 'npx tsc --noEmit', 'typecheck'],
+  ['dash-render', 'node check.mjs', 'e2e'],
+  ['review:security', 'git diff main', 'review'],
+  ['xml-valid', 'for f in a.svg; do xmllint --noout $f; done', 'other'],
+  ['build', 'cargo build', 'build'],
+];
+const bad = cases.filter(([l, c, k]) => kindOf(l, c) !== k).map(([l, c, k]) => `${l}: ${kindOf(l, c)} != ${k}`);
+console.log(bad.length ? bad.join('; ') : 'ok');
+JS
+  kinds="$(node "$TMP/kinds-test.js" "$SKILL_DIR/templates/dashboard.html" 2>&1)"
+  check "dashboard: check kinds ignore test -f, [ ], jq test(), grep over tests/" '[ "$kinds" = ok ] || { echo "    $kinds"; false; }'
+fi
+check "dashboard loads nothing remote"          '! grep -E >/dev/null "(src|href)=\"https?:" "$ROSALBITO_HOME/dashboard.html"'
 check "incremental collect reuses unchanged runs" 'bash "$S/collect.sh" "$TMP" >/dev/null && [ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ]'
 if command -v node >/dev/null && command -v curl >/dev/null; then
   PORT=$(( 20000 + RANDOM % 20000 ))
