@@ -46,47 +46,79 @@ cached_line() {  # cached_line <run_id> <run_dir>
 }
 
 # --- input size: what a run was handed, and what it changed --------------------------------
-# Read-only git (`git -C`, no fetch, no index refresh). The diff is the run's branch as it was
-# when the run finished against its base as it was when the run started, from their merge-base,
-# so a base that later merged the branch does not hide the change. Committed changes only.
-# Anything missing (repo, branch, base, history) gives diff: null, never a guess. Numstat
-# results are reused from the previous index while merge-base and head are unchanged.
+# Read-only git (`git -C`, no fetch, no index refresh), committed changes only. Head = the branch
+# as it was when the run finished (10 min slack; its tip while open). Lower bound, in order:
+#   "since run start": the branch's own commit at started_at, when it descends from the merge-base
+#                      with the base as of started_at, so a wrong or stale base_branch in state.md
+#                      cannot inflate the diff with work that was already on the branch;
+#   "vs merge-base":   that merge-base, when the branch's commit at start does not descend from it;
+#   "since repo creation": the empty tree, when the repository itself was created during the run.
+# The diff is null unless lower..head has at least one commit dated inside the run's window: a
+# branch rewritten after the run, or a run that committed nothing, gives null, never a confident
+# wrong number. Numstat results are reused from the previous index while lower and head match.
 export GIT_OPTIONAL_LOCKS=0
 DIFFPREV=""; [ -s "$OUT" ] && DIFFPREV="$OUT"
-git_ref() {  # local branch, else origin's remote-tracking copy, else a remote ref named as such (upstream/dev)
-  local r
-  for r in "refs/heads/$2" "refs/remotes/origin/$2" "refs/remotes/$2"; do
-    git -C "$1" rev-parse -q --verify "$r^{commit}" 2>/dev/null && return 0
-  done
-  return 1
+git_ref() {  # the fresher of the local branch and origin's copy (the one containing the other, else
+             # origin), else a remote ref named as such (upstream/dev)
+  local l o
+  l="$(git -C "$1" rev-parse -q --verify "refs/heads/$2^{commit}" 2>/dev/null)"
+  o="$(git -C "$1" rev-parse -q --verify "refs/remotes/origin/$2^{commit}" 2>/dev/null)"
+  if [ -n "$l" ] && [ -n "$o" ]; then
+    if git -C "$1" merge-base --is-ancestor "$o" "$l" 2>/dev/null; then echo "$l"; else echo "$o"; fi
+  elif [ -n "$l$o" ]; then echo "$l$o"
+  else git -C "$1" rev-parse -q --verify "refs/remotes/$2^{commit}" 2>/dev/null; fi
 }
+TEST_PATH_AWK='p ~ /(^|\/)(tests?|__tests__|specs?|e2e)\// || p ~ /[._-](test|spec)s?\.[A-Za-z0-9]+$/ || p ~ /(^|\/)test_[^\/]*\.py$/'
 diff_json() {  # diff_json <repo> <branch> <base|""> <started_at> <finished_at|"">
-  local repo="$1" branch="$2" base="$3" st="$4" fin="$5" head base_tip base_at mb fe hit
+  local repo="$1" branch="$2" base="$3" st="$4" fin="$5" head base_tip base_at mb="" start lower basis range se he hit ns
   [ -n "$branch" ] && [ -n "$st" ] && git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || { echo null; return; }
+  se="$(iso_to_epoch "$st")"; [ -n "$se" ] || { echo null; return; }
+  if [ -n "$fin" ]; then he="$(iso_to_epoch "$fin")"; [ -n "$he" ] || { echo null; return; }; else he="$(date +%s)"; fi
+  he=$((he + 600))
+  head="$(git_ref "$repo" "$branch")" || { echo null; return; }
+  [ -z "$fin" ] || head="$(git -C "$repo" rev-list -1 --first-parent --before="$(epoch_to_iso "$he")" "$head" 2>/dev/null)"
+  [ -n "$head" ] || { echo null; return; }
   if [ -z "$base" ]; then
     base="$(git -C "$repo" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"; base="${base#origin/}"
     [ -n "$base" ] || for b in main master; do git_ref "$repo" "$b" >/dev/null && { base="$b"; break; }; done
   fi
-  [ -n "$base" ] && head="$(git_ref "$repo" "$branch")" && base_tip="$(git_ref "$repo" "$base")" || { echo null; return; }
-  if [ -n "$fin" ]; then
-    fe="$(iso_to_epoch "$fin")"; [ -n "$fe" ] || { echo null; return; }
-    head="$(git -C "$repo" rev-list -1 --first-parent --before="$(epoch_to_iso $((fe + 600)))" "$head" 2>/dev/null)"
+  # the base as it was at run start (fresher copy first); a copy that did not exist yet, shares no
+  # history with head, or already contains head (merged after the run) cannot bound the run's work
+  if [ -n "$base" ]; then
+    for base_tip in $(git_ref "$repo" "$base") $(git -C "$repo" rev-parse -q --verify "refs/heads/$base^{commit}" 2>/dev/null); do
+      base_at="$(git -C "$repo" rev-list -1 --first-parent --before="$st" "$base_tip" 2>/dev/null)"
+      [ -n "$base_at" ] && mb="$(git -C "$repo" merge-base "$base_at" "$head" 2>/dev/null)" && [ -n "$mb" ] && [ "$mb" != "$head" ] && break
+      mb=""
+    done
   fi
-  base_at="$(git -C "$repo" rev-list -1 --first-parent --before="$st" "$base_tip" 2>/dev/null)"; base_at="${base_at:-$base_tip}"
-  [ -n "$head" ] && mb="$(git -C "$repo" merge-base "$base_at" "$head" 2>/dev/null)" && [ -n "$mb" ] || { echo null; return; }
+  start="$(git -C "$repo" rev-list -1 --first-parent --before="$st" "$head" 2>/dev/null)"
+  range="$head"
+  if [ -n "$start" ] && { [ -z "$mb" ] || git -C "$repo" merge-base --is-ancestor "$mb" "$start" 2>/dev/null; }; then
+    lower="$start"; basis="since run start"; range="$start..$head"
+  elif [ -n "$mb" ]; then lower="$mb"; basis="vs merge-base"; range="$mb..$head"
+  elif [ -z "$start" ] && [ "$(git -C "$repo" log -1 --format=%ct "$(git -C "$repo" rev-list --max-parents=0 "$head" 2>/dev/null | tail -1)" 2>/dev/null)" -ge "$se" ] 2>/dev/null; then
+    lower="$(git -C "$repo" hash-object -t tree /dev/null)"; basis="since repo creation"   # the run created the repo: empty tree
+  else echo null; return; fi
+  # the run must own at least one commit in the range (by committer date, inside its window)
+  [ "$lower" != "$head" ] && git -C "$repo" log --format=%ct "$range" 2>/dev/null \
+    | awk -v lo="$se" -v hi="$he" '$1 >= lo && $1 <= hi { found = 1 } END { exit !found }' || { echo null; return; }
   if [ -n "$DIFFPREV" ]; then
-    hit="$(grep -F "\"head\":\"$head\"" "$DIFFPREV" | jq -c --arg b "$mb" --arg h "$head" \
-      'select(.input_size.diff.base == $b and .input_size.diff.head == $h) | .input_size.diff' 2>/dev/null | head -1)"
-    [ -n "$hit" ] && { jq -c --arg br "$branch" --arg bb "$base" '.branch = $br | .base_branch = $bb' <<< "$hit"; return; }
+    hit="$(grep -F "\"head\":\"$head\"" "$DIFFPREV" | jq -c --arg b "$lower" --arg h "$head" \
+      'select(.input_size.diff.base == $b and .input_size.diff.head == $h and (.input_size.diff | has("test_files"))) | .input_size.diff' 2>/dev/null | head -1)"
+    [ -n "$hit" ] && { jq -c --arg br "$branch" --arg bb "$base" --arg mb "$mb" --arg basis "$basis" \
+      '.branch = $br | .base_branch = $bb | .merge_base = (if $mb == "" then null else $mb end) | .basis = $basis' <<< "$hit"; return; }
   fi
-  local ns; ns="$(git -C "$repo" diff --numstat --no-ext-diff --no-textconv "$mb" "$head" 2>/dev/null)" || { echo null; return; }
-  awk 'NF { f++; if ($1 != "-") a += $1; if ($2 != "-") r += $2 } END { print f + 0, a + 0, r + 0 }' <<< "$ns" | {
-    read -r f a r
-    jq -cn --argjson f "$f" --argjson a "$a" --argjson r "$r" --arg b "$mb" --arg h "$head" --arg br "$branch" --arg bb "$base" \
-      '{files: $f, added: $a, removed: $r, base: $b, head: $h, branch: $br, base_branch: $bb}'
+  ns="$(git -C "$repo" diff --numstat --no-ext-diff --no-textconv "$lower" "$head" 2>/dev/null)" || { echo null; return; }
+  awk -F'\t' "NF { f++; if (\$1 != \"-\") a += \$1; if (\$2 != \"-\") r += \$2; p = \$3; if ($TEST_PATH_AWK) t++ }
+       END { print f + 0, a + 0, r + 0, t + 0 }" <<< "$ns" | {
+    read -r f a r t
+    jq -cn --argjson f "$f" --argjson a "$a" --argjson r "$r" --argjson t "$t" --arg b "$lower" --arg h "$head" \
+      --arg br "$branch" --arg bb "$base" --arg mb "$mb" --arg basis "$basis" \
+      '{files: $f, added: $a, removed: $r, test_files: $t, base: $b, head: $h, basis: $basis,
+        merge_base: (if $mb == "" then null else $mb end), branch: $br, base_branch: $bb}'
   }
 }
-with_input_size() {  # with_input_size <line> <run_dir|"">: the line plus input_size
+with_input_size() {  # with_input_size <line> <run_dir|"">: the line plus input_size; test_files_touched from its diff
   local line="$1" rd="$2" repo branch="" base="" st fin diff
   repo="$(jq -r '.repo_path // empty' <<< "$line")"
   st="$(jq -r '.started_at // empty' <<< "$line")"; fin="$(jq -r '.finished_at // empty' <<< "$line")"
@@ -95,9 +127,11 @@ with_input_size() {  # with_input_size <line> <run_dir|"">: the line plus input_
     base="$(frontmatter "$rd/state.md" | sed -n 's/^base_branch:[[:space:]]*//p' | head -1 | sed -e 's/^"\(.*\)"$/\1/')"
   fi
   diff="null"; [ -n "$repo" ] && [ -n "$branch" ] && diff="$(diff_json "$repo" "$branch" "$base" "$st" "$fin")"
-  jq -c --argjson diff "${diff:-null}" '. + {input_size: {
+  jq -c --argjson diff "${diff:-null}" '([.usage.agents[]? | select(.agent_id == "main")] | sort_by(.first_ts) | .[0]) as $o
+    | . + {test_files_touched: (if $diff then $diff.test_files else null end), input_size: {
       task_chars: (if (.task | type) == "string" then (.task | length) else null end),
-      first_context_tokens: ([.usage.agents[]? | select(.agent_id == "main")] | sort_by(.first_ts) | .[0].first_context_tokens // null),
+      first_context_tokens: (if $o then $o.first_context_tokens else null end),
+      first_context_mid_session: (if $o then $o.mid_session else null end),
       diff: $diff}}' <<< "$line"
 }
 
