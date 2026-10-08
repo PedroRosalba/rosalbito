@@ -197,7 +197,7 @@ check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO
 check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
 IX() { jq -c --arg r "$1" "select(.run_id==\$r)" "$ROSALBITO_HOME/runs.jsonl"; }
 check "collect: input size from task and first context" 'IX "$RUN2" | jq -e ".input_size.task_chars==11 and .input_size.first_context_tokens==1002000" >/dev/null'
-check "collect: real branch diff vs base merge-base" 'IX "$RUN2" | jq -e ".input_size.diff | .files==2 and .added==4 and .removed==1 and .branch==\"feature/add-ci-badge-to-readme\" and .base_branch==.branch and .head==\"$(git rev-parse HEAD)\" and .base==\"$(git rev-parse HEAD~1)\"" >/dev/null'
+check "collect: real branch diff since the run started" 'IX "$RUN2" | jq -e ".input_size.diff | .files==2 and .added==4 and .removed==1 and .branch==\"feature/add-ci-badge-to-readme\" and .base_branch==.branch and .head==\"$(git rev-parse HEAD)\" and .base==\"$(git rev-parse HEAD~1)\"" >/dev/null'
 check "collect: fix cycles carried into the index" 'IX "$RUN" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"]" >/dev/null'
 jq -c 'if .input_size.diff then .input_size.diff.files=99 else . end' "$ROSALBITO_HOME/runs.jsonl" > "$TMP/ix" && mv "$TMP/ix" "$ROSALBITO_HOME/runs.jsonl"
 check "collect: numstat reused while base and head are unchanged" 'bash "$S/collect.sh" "$TMP" >/dev/null && IX "$RUN2" | jq -e ".input_size.diff.files==99" >/dev/null'
@@ -205,6 +205,34 @@ sed -i.bak 's#^branch: .*#branch: feature/gone#' ".agent/runs/$RUN/state.md" && 
 check "collect: missing branch gives diff null, not a guess" 'bash "$S/collect.sh" --full "$TMP" >/dev/null && IX "$RUN" | jq -e ".input_size.diff==null and .input_size.task_chars==22" >/dev/null'
 rm -f "$ROSALBITO_HOME/runs.jsonl" && bash "$S/collect.sh" "$TMP" >/dev/null
 check "collect: a fresh index measures the diff again" 'IX "$RUN2" | jq -e ".input_size.diff.files==2" >/dev/null'
+# diff edge cases in a second throwaway repo, indexed into its own ROSALBITO_HOME
+G="$TMP-git"; mkdir -p "$G" && git -C "$G" init -q -b main 2>/dev/null || git -C "$G" init -q "$G"
+git -C "$G" config user.email t@t; git -C "$G" config user.name t
+gc() {  # gc <iso date> <file> <lines>: commit <lines> lines to <file> at that date
+  mkdir -p "$G/$(dirname "$2")"; seq 1 "$3" >> "$G/$2"; git -C "$G" add "$2"
+  GIT_COMMITTER_DATE="$1" GIT_AUTHOR_DATE="$1" git -C "$G" commit -qm "$2"
+}
+mkrun() {  # mkrun <id> <branch> <base> <started> <finished>
+  mkdir -p "$G/.agent/runs/$1"
+  printf -- '---\nrun_id: %s\ntask: "%s"\nstatus: done\nbranch: %s\nbase_branch: %s\nstarted_at: %s\nupdated_at: %s\nfinished_at: %s\n---\n' "$1" "$1" "$2" "$3" "$4" "$5" "$5" > "$G/.agent/runs/$1/state.md"
+}
+gc 2021-01-01T00:00:00Z init.txt 1
+git -C "$G" checkout -q -b feat/earlier; gc 2021-01-01T01:00:00Z earlier.txt 10     # work already on the branch the run was cut from
+git -C "$G" checkout -q -b feature/cut; gc 2021-01-01T02:30:00Z tests/x.test.sh 2   # the run's own work
+mkrun r-cut feature/cut main 2021-01-01T02:00:00Z 2021-01-01T03:00:00Z               # state says main: wrong base
+git -C "$G" checkout -q main; git -C "$G" checkout -q -b feature/rewritten; gc 2021-01-01T00:30:00Z old.txt 3
+git -C "$G" checkout -q -b tmp-run; gc 2021-01-01T04:30:00Z run.txt 5
+mkrun r-rewritten feature/rewritten main 2021-01-01T04:00:00Z 2021-01-01T05:00:00Z
+git -C "$G" checkout -q feature/rewritten; git -C "$G" merge -q --ff-only tmp-run        # the run's commit is on the branch...
+mkrun r-idle main main 2021-01-01T06:00:00Z 2021-01-01T07:00:00Z                       # branch == base, nothing committed
+GH="$TMP/.rosalbito-git"; gx() { ROSALBITO_HOME="$GH" ROSALBITO_NO_USAGE=1 bash "$S/collect.sh" --full "$G" >/dev/null; jq -c --arg r "$1" 'select(.run_id==$r) | .input_size.diff' "$GH/runs.jsonl"; }
+check "collect: a branch cut from another branch counts only the run's work" '[ "$(gx r-cut | jq -c "[.files, .added, .removed, .test_files, .basis]")" = "[1,2,0,1,\"since run start\"]" ]'
+check "collect: test_files_touched comes from the run's diff" 'jq -e "select(.run_id==\"r-cut\") | .test_files_touched==1" "$GH/runs.jsonl" >/dev/null'
+check "collect: the run's commit on its branch is measured" '[ "$(gx r-rewritten | jq -c "[.files, .added]")" = "[1,5]" ]'
+git -C "$G" reset -q --hard HEAD~1                                                     # ...until the branch is rewritten
+check "collect: a branch rewritten after the run gives diff null" '[ "$(gx r-rewritten)" = null ] && jq -e "select(.run_id==\"r-rewritten\") | .test_files_touched==null" "$GH/runs.jsonl" >/dev/null'
+check "collect: branch == base with nothing committed gives null, not 0" '[ "$(gx r-idle)" = null ]'
+rm -rf "$G"
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
 check "dashboard has Tokens and Verification, Tool calls folded" 'grep >/dev/null "data-section=\"tokens\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"verification\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"tools\" data-default=\"closed\"" "$ROSALBITO_HOME/dashboard.html"'
