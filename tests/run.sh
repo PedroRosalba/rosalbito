@@ -108,6 +108,7 @@ else
   check "driver none recorded"                  '[ "$(bash "$S/state.sh" get driver)" = "none" ]'
 fi
 check "metrics line is JSON"                    'bash "$S/metrics.sh" | jq -e ".iterations==3 and .checks_run==5 and .checks_failed==3" >/dev/null'
+check "metrics: fail-then-pass label is a fix cycle" 'bash "$S/metrics.sh" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"] and (.check_labels|map(select(.label==\"boom\"))[0] | .runs==4 and .failed==3 and .last_exit==0)" >/dev/null'
 bash "$S/finish-run.sh" done --pr https://example.com/pr/1 >/dev/null; rc=$?
 check "finish-run done"                         '[ $rc -eq 0 ] && [ "$(bash "$S/state.sh" get status)" = "done" ]'
 check "pr recorded"                             '[ "$(bash "$S/state.sh" get pr)" = "https://example.com/pr/1" ]'
