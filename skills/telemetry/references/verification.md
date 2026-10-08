@@ -232,7 +232,7 @@ acceptance:
     verify: { command: "grep -q 'orders.trace.test.ts' .agent/context/telemetry/instrumentation-map.md" }
 ```
 
-Run each through `bash ~/.claude/skills/rosalbito/scripts/verify.sh <label> <command>`.
+Run each through `bash SKILL_DIR/../rosalbito/scripts/verify.sh <label> <command>` (`SKILL_DIR` = the telemetry skill directory).
 
 ## Common false positives
 
