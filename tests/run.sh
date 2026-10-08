@@ -164,6 +164,16 @@ check "usage: first and peak context per agent" 'jq -e "(.agents[] | select(.age
 check "usage: total tokens per agent and run"   'jq -e "(.agents[] | select(.agent_id==\"main\") | .total_tokens==6327) and .totals.total_tokens==6831" <<< "$ue" >/dev/null'
 check "usage: effort mix and model mix totals"  'jq -e ".totals.effort_mix=={\"high\":2,\"medium\":1,\"unknown\":1,\"xhigh\":1} and .totals.model_mix=={\"claude-opus-5-5\":6729,\"claude-sonnet-5-5\":102}" <<< "$ue" >/dev/null'
 check "usage: existing fields unchanged"         'jq -e ".totals.messages==5 and .totals.input_tokens==36 and .totals.cache_write_tokens==100 and .totals.cache_read_tokens==6600 and .totals.output_tokens==95 and (.agents|map(has(\"_model_tokens\"))|any|not)" <<< "$ue" >/dev/null'
+# fork subagents replay their parent's lines (same uuid) and re-log the fork-point message: counted once
+mkdir -p "$P/sess-c/subagents"
+{ am 2021-01-01T00:00:01.000Z c1 k1 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:02.000Z c2 k2 claude-opus-5-5 high 100 10 0 1000 10; } > "$P/sess-c.jsonl"
+{ am 2021-01-01T00:00:01.000Z c1 k1 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:02.000Z c2 k9 claude-opus-5-5 high 100 10 0 1000 10
+  am 2021-01-01T00:00:03.000Z f1 k3 claude-opus-5-5 high 100 10 0 1000 10; } | sed 's/^{/{"isSidechain":true,"agentId":"fk",/' > "$P/sess-c/subagents/agent-fk.jsonl"
+echo '{"agentType":"fork","description":"fork of main","spawnDepth":1}' > "$P/sess-c/subagents/agent-fk.meta.json"
+uf="$(bash "$S/usage.sh" --run-id fixture-fork --start 2021-01-01T00:00:00Z --end 2021-01-01T00:01:00Z --sessions sess-c)"
+check "usage: fork replay counted once, for its owner" 'jq -e ".totals.messages==3 and .totals.thinking_ms==300 and (.agents[] | select(.agent_id==\"fk\") | .messages==1) and (.agents[] | select(.agent_id==\"main\") | .messages==2)" <<< "$uf" >/dev/null'
 check "metrics line carries usage + version"   'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
 # +4 -1 in 2 files on the run branch, committed (by date) after the second run started
 CD="$(epoch_to_iso $(( $(iso_to_epoch "$ST2") + 5 )))"
