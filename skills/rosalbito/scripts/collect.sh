@@ -23,7 +23,8 @@ PROJ="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
 PREV=""; [ "$FULL" = 0 ] && [ -s "$OUT" ] && PREV="$OUT"
 
 # a line written by an older collect lacks the newer fields: recompute it once
-current_schema() { jq -e '(.legacy == true or has("fix_cycles")) and (.usage == null or (.usage.totals | has("total_tokens")))' >/dev/null 2>&1 <<< "$1"; }
+current_schema() { jq -e '(.legacy == true or has("fix_cycles_command_changed")) and (.usage == null or (.usage.totals | has("peak_context_tokens")))
+  and (.input_size == null or ((.input_size | has("first_context_mid_session")) and (.input_size.diff == null or (.input_size.diff | has("basis")))))' >/dev/null 2>&1 <<< "$1"; }
 
 # previous line of a run that was already finished and has not changed since the last collect
 cached_line() {  # cached_line <run_id> <run_dir>
@@ -176,5 +177,17 @@ while IFS= read -r repo; do
   done
 done <<< "$repos"
 
-jq -sc 'sort_by(.started_at) | .[]' "$TMPOUT" > "$TMPOUT.sorted" && mv "$TMPOUT.sorted" "$OUT"; rm -f "$TMPOUT"   # atomic for the live server
+# runs that read the same session over overlapping windows (usage.sh's 10 min slack included) share
+# transcript messages: usage_overlaps lists them; when the usage is identical, every run but the
+# earliest is usage_duplicate_of it, and aggregates count that usage once
+jq -sc 'def win: [(.started_at | fromdateiso8601? // null),
+                  ((.finished_at // .updated_at) | fromdateiso8601? // null | if . then . + 600 else null end)];
+  sort_by(.started_at) | . as $all | map(. as $r | ($r.usage.sessions // []) as $ss | ($r | win) as $w
+    | [$all[] | select(.run_id != $r.run_id and ((.usage.sessions // []) as $o | any($ss[]; . as $x | $o | index([$x]) != null)))
+       | (win) as $v | select($w[0] != null and $w[1] != null and $v[0] != null and $v[1] != null and $w[0] <= $v[1] and $v[0] <= $w[1])] as $ov
+    | . + {usage_overlaps: ($ov | map(.run_id)),
+           usage_duplicate_of: ([$ov[] | select(.usage.totals.total_tokens == $r.usage.totals.total_tokens
+               and .usage.totals.cost_usd == $r.usage.totals.cost_usd
+               and (.started_at < $r.started_at or (.started_at == $r.started_at and .run_id < $r.run_id)))] | .[0].run_id // null)})
+  | .[]' "$TMPOUT" > "$TMPOUT.sorted" && mv "$TMPOUT.sorted" "$OUT"; rm -f "$TMPOUT"   # atomic for the live server
 echo "$n runs from $(printf '%s\n' "$repos" | sed '/^$/d' | wc -l | tr -d ' ') repos -> $OUT"
