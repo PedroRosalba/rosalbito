@@ -494,7 +494,8 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   const mixText = m => Object.entries(m || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join(' · ');
   const diffOf = r => (r.input_size && r.input_size.diff) || null;
   const diffLines = r => { const d = diffOf(r); return d ? d.added + d.removed : null; };
-  const perLine = r => { const t = totalTokens(r), l = diffLines(r); return t != null && l ? t / l : null; };
+  // Open runs: usage stops at the last state update while the diff runs to now, so the ratio would pair mismatched windows.
+  const perLine = r => { if (isOpen(r)) return null; const t = totalTokens(r), l = diffLines(r); return t != null && l ? t / l : null; };
   const EFFORT_R = { low: 4, medium: 5, high: 6.5, xhigh: 8, max: 9.5 };
   const midSession = r => !!(r.input_size && r.input_size.first_context_mid_session);
   const estimated = r => (totals(r) && totals(r).output_estimated_messages) || 0;
@@ -558,6 +559,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
         s('circle', { cx: r + 1, cy: r + 1, r, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 1.5 })), e); }));
     const missing = withTok.length - pts.length, noTok = runs.length - withTok.length;
     const mid = withTok.filter(midSession).length, est = withTok.filter(estimated).length, shared = withTok.filter(r => r.usage_duplicate_of).length;
+    const open = withTok.filter(isOpen).length;
     $('note-tokens').textContent = [
       missing ? `${missing} run${missing === 1 ? '' : 's'} not plotted: ${M.missing}.` : '',
       noTok ? `${noTok} run${noTok === 1 ? '' : 's'} without token data (no transcript).` : '',
@@ -565,6 +567,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       mid ? `† ${mid} run${mid === 1 ? '' : 's'} started more than 15 minutes into an existing session: their first-turn context includes that earlier work, so it overstates what the run was handed.` : '',
       est ? `* ${est} run${est === 1 ? '' : 's'} include subagent messages whose transcript kept only a partial output count; that output is estimated from visible text (hidden thinking not included).` : '',
       shared ? `${shared} run${shared === 1 ? '' : 's'} marked shared usage ran in the same session window as another run: identical tokens, plotted for both, counted once in totals.` : '',
+      open ? `${open} run${open === 1 ? ' is' : 's are'} still open: tokens count up to the run's last state update, so Tokens / line is left blank until it finishes.` : '',
     ].filter(Boolean).join(' ');
     if (!pts.length) { $('chart-tokens').replaceChildren(h('div', { class: 'empty' }, `No runs with ${M.button.toLowerCase()} and token data in this filter.`)); }
     else {
