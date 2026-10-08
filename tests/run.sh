@@ -184,6 +184,8 @@ rm -f "$ROSALBITO_HOME/runs.jsonl" && bash "$S/collect.sh" "$TMP" >/dev/null
 check "collect: a fresh index measures the diff again" 'IX "$RUN2" | jq -e ".input_size.diff.files==2" >/dev/null'
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
+check "dashboard has Tokens and Verification, Tool calls folded" 'grep >/dev/null "data-section=\"tokens\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"verification\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"tools\" data-default=\"closed\"" "$ROSALBITO_HOME/dashboard.html"'
+check "dashboard loads nothing remote"          '! grep -E >/dev/null "(src|href)=\"https?:" "$ROSALBITO_HOME/dashboard.html"'
 check "incremental collect reuses unchanged runs" 'bash "$S/collect.sh" "$TMP" >/dev/null && [ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ]'
 if command -v node >/dev/null && command -v curl >/dev/null; then
   PORT=$(( 20000 + RANDOM % 20000 ))
