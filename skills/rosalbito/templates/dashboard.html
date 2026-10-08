@@ -649,17 +649,22 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   const ranTests = r => { const k = runKinds(r); return (k.test || 0) + (k.e2e || 0) > 0; };
   function verification(runs) {
     const known = runs.filter(r => r.fix_cycles != null);
-    const fix = sum(known, r => r.fix_cycles), withFix = known.filter(r => r.fix_cycles > 0).length;
+    const fix = sum(known, r => r.fix_cycles), cmdChanged = sum(known, r => r.fix_cycles_command_changed), withFix = known.filter(r => r.fix_cycles > 0).length;
     const tested = runs.filter(ranTests).length;
     $('verification-headline').textContent = `${tested} of ${runs.length} runs ran tests · ${fix} fix cycle${fix === 1 ? '' : 's'}`;
-    $('verification-sub').textContent = `${sum(runs, r => r.checks_run)} checks run, ${sum(runs, r => r.checks_failed)} failed · ${withFix} run${withFix === 1 ? '' : 's'} went through at least one fail → fix → pass loop` +
-      (known.length < runs.length ? ` · fix cycles unknown for ${runs.length - known.length} legacy run${runs.length - known.length === 1 ? '' : 's'}` : '');
+    $('verification-sub').textContent = `${sum(runs, r => r.checks_run)} checks run, ${sum(runs, r => r.checks_failed)} failed · ` +
+      `${fix} fail → pass transition${fix === 1 ? '' : 's'} in ${withFix} run${withFix === 1 ? '' : 's'}, of which ${cmdChanged} came after the check command itself changed` +
+      (known.length < runs.length ? ` · unknown for ${runs.length - known.length} legacy run${runs.length - known.length === 1 ? '' : 's'}` : '');
     $('legend-checks').replaceChildren(...KIND_LABELS.map(([k, l]) => h('span', {}, h('i', { class: 'sw', style: `background:${kindColor(k)}` }), l)));
-    $('note-verification').textContent = 'How check kinds are guessed: from each check’s label (a leading “review-” is stripped), then from its command; first match wins in this order — ' +
-      'E2E / render (e2e, playwright, cypress, render, screenshot, visual, browser), Lint / format (lint, clippy, eslint, biome, fmt, format, prettier, ruff, shellcheck), ' +
-      'Typecheck (typecheck, tsc, mypy, pyright, cargo check), Test (test, suite, spec, jest, vitest, pytest, rspec, smoke), Build (build, compile, bundle); ' +
-      'otherwise Review if the label says review or audit, else Other. “Ran tests” = at least one Test or E2E / render check. Test files touched = files with “test” in their path in the branch diff (metrics.sh). ' +
-      'A fix cycle is a check label that failed and later passed in the same run. Legacy runs kept only the labels that ended passing, so their kinds are partial and fix cycles unknown.';
+    $('note-verification').textContent = 'How check kinds are guessed. The label states intent first (a leading “review-” is stripped): ' +
+      'E2E / render (e2e, playwright, cypress, render, screenshot, visual, browser, lighthouse), Lint / format (lint, clippy, eslint, biome, fmt, format, prettier, ruff, shellcheck), ' +
+      'Typecheck (typecheck, tsc, mypy, pyright), Build (build, compile, bundle). Otherwise the command is split into segments (env assignments, !, bash -c and npx peeled off; ' +
+      'the shell’s test -f/[ … ], jq’s test(…) and quoted strings ignored): Test needs a runner (cargo/bun/deno/go/npm/pnpm/yarn/nx/make test, nx run-many -t …test, jest, vitest, pytest, rspec, mocha, node --test, playwright test) ' +
+      'or an executed test script (tests/…, *test*.sh/js/ts/py); a label saying test, suite, spec or smoke counts as Test unless its command only inspects (grep, jq, git, diff, cat, ls, echo, test, …). ' +
+      'Then Lint / Typecheck / Build from the command, else Review if the label says review or audit, else Other. “Ran tests” = at least one Test or E2E / render check. ' +
+      'Test files touched = files under tests/, __tests__/, spec/ or e2e/, or named *.test.* / *.spec.* / test_*.py, in the run’s own diff (Tokens section); – when that diff is unknown. ' +
+      'A fix cycle is one fail → pass transition of a check label in a run (“x-2” counts as “x”; a missing exit code is unknown, not a failure); when the passing run used a different command, the check was rewritten, so the code may not have been the fix. ' +
+      'Legacy runs kept only the labels that ended passing, so their kinds are partial and fix cycles unknown.';
     if (!runs.length) { $('table-verification').replaceChildren(h('div', { class: 'empty' }, 'No runs match these filters.')); return; }
     const rs = [...runs].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
     $('table-verification').replaceChildren(h('table', {},
@@ -676,7 +681,8 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
           h('td', { class: 'num' }, r.checks_run ?? '–'), h('td', { class: 'num' }, r.checks_failed ?? '–'),
           h('td', { style: 'min-width:220px' }, kinds),
           h('td', { class: 'num' }, r.test_files_touched ?? '–'),
-          h('td', { class: 'num', title: (r.fix_cycle_labels || []).join(', ') || null }, r.fix_cycles == null ? '–' : r.fix_cycles),
+          h('td', { class: 'num', title: (r.fix_cycle_labels || []).join(', ') || null }, r.fix_cycles == null ? '–'
+            : r.fix_cycles_command_changed ? `${r.fix_cycles} (${r.fix_cycles_command_changed} cmd changed)` : r.fix_cycles),
           h('td', {}, ranTests(r) ? h('span', { class: 'badge' }, h('span', { class: 'dot', style: 'background:var(--good)' }), 'ran') : h('span', { class: 'muted' }, 'none recorded')));
       }))));
   }
