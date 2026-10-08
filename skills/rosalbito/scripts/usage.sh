@@ -20,11 +20,14 @@
 # first_context_tokens / peak_context_tokens are its first and largest value per agent, and
 # total_tokens adds output (so it inherits the output estimate above). Totals: total_tokens,
 # thinking_ms, effort_mix {level: messages}, model_mix {model: total_tokens}.
+# Fork subagents (agentType "fork") replay their parent's lines with the same uuid (and re-log
+# the fork-point message under a new uuid): each uuid, and each message id, counts once, for the
+# non-fork, shallowest agent that has it.
 # Transcripts: $CLAUDE_PROJECTS_DIR (default ~/.claude/projects). Prices: config/pricing.json.
 # Prints one JSON object: {sessions, agents:[...], totals}.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-[ "${1:-}" = "--help" ] && { sed -n '2,24p' "$0"; exit 0; }
+[ "${1:-}" = "--help" ] && { sed -n '2,26p' "$0"; exit 0; }
 
 RUN_ID=""; START=""; END=""; SESSIONS=""
 while [ $# -gt 0 ]; do
@@ -99,7 +102,13 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
     elif ($d | test("test")) then "tester"
     else "other" end;
   def sumk(f): map(f) | add // 0;
-  (group_by([.sess, .agent]) | map(
+  # fork subagents replay the transcript lines of their parent (same uuid): count each line once, for its owner
+  def owner_rank: if .agent == "main" then [0, 0] else ($M[.agent] // {}) as $m
+    | [(if $m.agentType == "fork" then 1 else 0 end), ($m.spawnDepth // 1)] end;
+  (map(select(.uuid == null)) + (map(select(.uuid != null)) | group_by(.uuid) | map(sort_by(owner_rank) | .[0])))
+  # the message at the fork point is re-logged under a new uuid: a message id belongs to its best-ranked agent
+  | group_by(.id) | map((map(owner_rank) | min) as $best | map(select(owner_rank == $best))) | flatten(1)
+  | (group_by([.sess, .agent]) | map(
      .[0] as $f | ($M[$f.agent] // {}) as $meta |
      (group_by(.id) | map(
         (map(.chars) | add) as $chars | (map(select(.final)) | length > 0) as $final
