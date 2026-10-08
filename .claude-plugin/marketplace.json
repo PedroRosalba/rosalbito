@@ -1,0 +1,15 @@
+{
+  "name": "rosalbito",
+  "owner": {
+    "name": "PedroRosalba",
+    "url": "https://github.com/PedroRosalba"
+  },
+  "description": "Rosalbito: autonomous, verified engineering runs for Claude Code.",
+  "plugins": [
+    {
+      "name": "rosalbito",
+      "source": ".",
+      "description": "One command for every engineering task: /rosalbito drives a task to a verified pull request. Includes the telemetry skill and the PreToolUse guard hook."
+    }
+  ]
+}
