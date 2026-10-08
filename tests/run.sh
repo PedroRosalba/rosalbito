@@ -247,6 +247,42 @@ rm -rf "$G"
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
 check "dashboard has Tokens and Verification, Tool calls folded" 'grep >/dev/null "data-section=\"tokens\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"verification\"" "$ROSALBITO_HOME/dashboard.html" && grep >/dev/null "data-section=\"tools\" data-default=\"closed\"" "$ROSALBITO_HOME/dashboard.html"'
+if command -v node >/dev/null; then   # the dashboard's check-kind heuristic, extracted and run as is
+  cat > "$TMP/kinds-test.js" <<'JS'
+const html = require('fs').readFileSync(process.argv[2], 'utf8');
+const block = html.split('// <check-kinds>')[1].split('// </check-kinds>')[0].replace(/^[^\n]*\n/, '');
+const kindOf = new Function(block + '; return kindOf;')();
+const cases = [
+  ['adr-002', 'test -f docs/adr/002.md && ! grep -rni tiktok README.md', 'other'],
+  ['compat-link', 'test -L skill && test -x skill/x.sh && echo ok', 'other'],
+  ['hooks-json', `jq -e '.hooks[] | select(.command|test("X"))' hooks/hooks.json`, 'other'],
+  ['orch-tiktok', 'bash -c ! grep -rni tiktok src tests README.md', 'other'],
+  ['prepush:full-suite', `grep -q '^exit=0' push.log && awk '{print}' push.log`, 'other'],
+  ['grep-tests', 'grep -r foo tests/x.test.ts', 'other'],
+  ['if-test', '[ -f a ] && [[ -d b ]] && echo ok', 'other'],
+  ['suite', 'bash tests/run.sh', 'test'],
+  ['gate', 'scripts/test.sh --keep', 'test'],
+  ['db', 'DATABASE_URL=postgres://x cargo test --features db', 'test'],
+  ['guards', 'yarn test:guards', 'test'],
+  ['final-run-many', 'npx nx run-many -t lint,test,build -p api', 'test'],
+  ['cli', 'cd packages/cli && bun test', 'test'],
+  ['unreachable', 'bash -c ! DATABASE_URL=x cargo test', 'test'],
+  ['red-green-new-tests', 'bash /tmp/redgreen.sh', 'test'],
+  ['review-test', 'cargo test', 'test'],
+  ['lint', 'cargo clippy --all-targets', 'lint'],
+  ['fix1:biome-changed', 'bunx biome check src', 'lint'],
+  ['ui-tsc', 'npx tsc --noEmit', 'typecheck'],
+  ['dash-render', 'node check.mjs', 'e2e'],
+  ['review:security', 'git diff main', 'review'],
+  ['xml-valid', 'for f in a.svg; do xmllint --noout $f; done', 'other'],
+  ['build', 'cargo build', 'build'],
+];
+const bad = cases.filter(([l, c, k]) => kindOf(l, c) !== k).map(([l, c, k]) => `${l}: ${kindOf(l, c)} != ${k}`);
+console.log(bad.length ? bad.join('; ') : 'ok');
+JS
+  kinds="$(node "$TMP/kinds-test.js" "$SKILL_DIR/templates/dashboard.html" 2>&1)"
+  check "dashboard: check kinds ignore test -f, [ ], jq test(), grep over tests/" '[ "$kinds" = ok ] || { echo "    $kinds"; false; }'
+fi
 check "dashboard loads nothing remote"          '! grep -E >/dev/null "(src|href)=\"https?:" "$ROSALBITO_HOME/dashboard.html"'
 check "incremental collect reuses unchanged runs" 'bash "$S/collect.sh" "$TMP" >/dev/null && [ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ]'
 if command -v node >/dev/null && command -v curl >/dev/null; then
