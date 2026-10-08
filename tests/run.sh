@@ -232,6 +232,17 @@ check "collect: the run's commit on its branch is measured" '[ "$(gx r-rewritten
 git -C "$G" reset -q --hard HEAD~1                                                     # ...until the branch is rewritten
 check "collect: a branch rewritten after the run gives diff null" '[ "$(gx r-rewritten)" = null ] && jq -e "select(.run_id==\"r-rewritten\") | .test_files_touched==null" "$GH/runs.jsonl" >/dev/null'
 check "collect: branch == base with nothing committed gives null, not 0" '[ "$(gx r-idle)" = null ]'
+# runs reading the same session over overlapping windows: flagged, identical usage counted once
+{ am 2021-01-01T08:10:00.000Z sh1 q1 claude-opus-5-5 high 0 10 0 1000 10
+  am 2021-01-01T09:30:00.000Z sh2 q2 claude-opus-5-5 high 0 10 0 2000 10; } > "$P/sess-shared.jsonl"
+for r in 'r-s1 08:00 09:00' 'r-s2 08:00 09:00' 'r-s3 08:30 10:00'; do
+  set -- $r; mkrun "$1" main main "2021-01-01T$2:00Z" "2021-01-01T$3:00Z"
+  sed -i.bak 's/^status: done$/status: done\nsessions: "sess-shared"/' "$G/.agent/runs/$1/state.md" && rm -f "$G/.agent/runs/$1/state.md.bak"
+done
+ROSALBITO_HOME="$GH" bash "$S/collect.sh" --full "$G" >/dev/null
+SH() { jq -c --arg r "$1" 'select(.run_id==$r) | [.usage.totals.messages, .usage_overlaps, .usage_duplicate_of]' "$GH/runs.jsonl"; }
+check "collect: shared-session runs flagged, identical usage marked duplicate" '[ "$(SH r-s1)" = "[1,[\"r-s2\",\"r-s3\"],null]" ] && [ "$(SH r-s2)" = "[1,[\"r-s1\",\"r-s3\"],\"r-s1\"]" ] && [ "$(SH r-s3)" = "[1,[\"r-s1\",\"r-s2\"],null]" ]'
+check "collect: runs in other sessions or windows are not flagged" '[ "$(jq -c "select(.run_id==\"r-cut\") | [.usage_overlaps, .usage_duplicate_of]" "$GH/runs.jsonl")" = "[[],null]" ]'
 rm -rf "$G"
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
