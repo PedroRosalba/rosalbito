@@ -37,7 +37,8 @@ if [ -s "$EV" ]; then
         if $e.exit != 0 then .fail = $e
         elif .fail != null then .t += [{label: $k, command_changed: (.fail.command != $e.command)}] | .fail = null
         else . end) | .t[])' "$EV")
-  check_labels=$(jq -sc 'group_by(.label) | map({label: .[0].label, command: (.[0].command // "" | .[0:160]),
+  check_labels=$(jq -sc 'group_by(.label) | map({label: .[0].label,
+    command: (.[0].command // "" | if length > 600 then .[0:600] | sub("\\s+\\S*$"; "") else . end),
     runs: length, failed: map(select((.exit | type) == "number" and .exit != 0)) | length, last_exit: .[-1].exit})' "$EV")
 fi
 reviews=$(grep -cE '^- round' "$STATE_FILE" 2>/dev/null || true); reviews="${reviews:-0}"
