@@ -1,6 +1,6 @@
 # Environment inventory (verified 2026-10-06, Pedro's Mac Mini)
 
-Verified by inspection, not assumed. Re-check with `skill/scripts/detect-tools.sh`.
+Verified by inspection, not assumed. Re-check with `skills/rosalbito/scripts/detect-tools.sh`.
 
 | Capability | Status | Evidence | Rosalbito use |
 |---|---|---|---|

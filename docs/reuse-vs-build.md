@@ -11,7 +11,7 @@ Presumptive defaults from the spec, each overturned only with a recorded reason.
 | Metrics platform | — | — | — | `metrics.sh` → one JSONL line per run | only what the agent can observe |
 | Context management | Claude Code compaction + resume protocol | yes | — | `current.md` schema + `state.sh` | the state file is the context that survives |
 | Database / runtime | — | — | — | nothing: Markdown, YAML, JSONL, Git | spec §4 |
-| Entrypoint + router | — | — | no installed skill does two-axis routing | `skill/SKILL.md`, `references/routing.md` | the actual project |
+| Entrypoint + router | — | — | no installed skill does two-axis routing | `skills/rosalbito/SKILL.md`, `references/routing.md` | the actual project |
 | State schema + resume | — | — | ralph-loop's state file is driver state, not run state | `templates/current.md`, `state.sh`, `init-run.sh`, `finish-run.sh` | spec §11, §13 |
 | Classification + path overrides | — | — | — | `config/risk-overrides.yaml`, `classify-paths.sh` | the classifier under-classifies by incentive; rules are a floor |
 | Acceptance contract | — | — | — | `templates/acceptance.yaml` | every criterion names its verification |
