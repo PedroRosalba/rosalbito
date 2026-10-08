@@ -156,7 +156,7 @@ what `/grill-with-docs` does) and interview Pedro until the frontier is empty. T
 ## 4. Hard gates (mechanisms, not sentences)
 
 - All code lands as PRs on feature branches; merging is Pedro's approval. Never `gh pr merge`.
-- `hooks/rosalbito-guard.sh` (PreToolUse, installed by `install.sh`) denies force-push,
+- `hooks/rosalbito-guard.sh` (PreToolUse, registered by the plugin or by `install.sh`) denies force-push,
   pushes to main/master, `--prod` deploys, destructive SQL, `rm -rf` on roots, prod
   credentials, `gh pr merge`. A denied command that is genuinely required is a `hard_gate`
   decision for Pedro: write the blocked report, do not work around the hook.
