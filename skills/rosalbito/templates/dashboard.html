@@ -113,6 +113,10 @@ th.sortable button { all: unset; cursor: pointer; display: block; width: 100%; p
 th.sortable button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 th[aria-sort="descending"] button::after { content: " ↓"; }
 th[aria-sort="ascending"] button::after { content: " ↑"; }
+.headline { font-size: 18px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+.kindbar { display: flex; gap: 2px; height: 10px; min-width: 80px; margin-bottom: 3px; }
+.kindbar .seg:first-child { border-radius: 3px 0 0 3px; }
+.kindbar .seg:last-child { border-radius: 0 3px 3px 0; }
 </style>
 </head>
 <body>
@@ -146,6 +150,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
     </div>
     <div class="card-body">
       <div class="legend" id="legend-roles"></div>
+      <p class="small muted" id="note-roles" style="margin:-4px 0 10px">“Tester / debugger subagents only” is the cost of subagents tagged tester or debugger, which Rosalbito rarely spawns: testing runs through verify.sh checks and debugging shows up as fix cycles. Both are in <a href="#verification">Verification</a>.</p>
       <div id="chart-runs"></div>
     </div>
   </section>
@@ -160,6 +165,17 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       <div id="chart-tokens"></div>
       <div class="scroll" id="table-tokens"></div>
       <p class="small muted" id="note-tokens"></p>
+    </div>
+  </section>
+
+  <section class="card" data-section="verification" id="verification">
+    <div class="card-head"><div><h2>Verification</h2><p class="sub small">Testing and debugging as the evidence records it: every check runs through verify.sh, and a fix cycle is a check that failed and later passed.</p></div></div>
+    <div class="card-body">
+      <p class="headline" id="verification-headline"></p>
+      <p class="sub small" id="verification-sub" style="margin-bottom:10px"></p>
+      <div class="legend" id="legend-checks"></div>
+      <div class="scroll" id="table-verification"></div>
+      <p class="small muted" id="note-verification"></p>
     </div>
   </section>
 
@@ -197,7 +213,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
     { key: 'implementer', label: 'Implement / write', match: r => r === 'implementer' || r === 'writer' },
     { key: 'reviewer', label: 'Reviewer', match: r => r.startsWith('review') },
     { key: 'explore', label: 'Explore / plan', match: r => r === 'explorer' || r === 'planner' },
-    { key: 'debug', label: 'Debug / test', match: r => r === 'debugger' || r === 'tester' },
+    { key: 'debug', label: 'Tester / debugger subagents only', match: r => r === 'debugger' || r === 'tester' },
     { key: 'other', label: 'Other', match: () => true },
   ];
   const groupOf = role => ROLE_GROUPS.find(g => g.match(role || 'other')).key;
@@ -569,6 +585,64 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       h('tbody', {}, sorted.map(r => h('tr', {}, TOKEN_COLS.map(c => h('td', { class: c.num ? 'num' : null }, c.show(r))))))));
   }
 
+  // verification: what the evidence says about testing and debugging
+  const CHECK_KINDS = [   // first match wins, on the label (a review- prefix stripped), then the command
+    ['e2e', 'E2E / render', /e2e|playwright|cypress|render|screenshot|visual|browser|lighthouse/],
+    ['lint', 'Lint / format', /lint|clippy|eslint|biome|fmt|format|prettier|ruff|shellcheck/],
+    ['typecheck', 'Typecheck', /typecheck|type-check|\btsc\b|mypy|pyright|cargo check/],
+    ['test', 'Test', /test|suite|\bspec\b|jest|vitest|pytest|rspec|smoke/],
+    ['build', 'Build', /build|compile|bundle/],
+  ];
+  const KIND_LABELS = [...CHECK_KINDS.map(([k, l]) => [k, l]), ['review', 'Review'], ['other', 'Other']];
+  const kindColor = k => { const i = KIND_LABELS.findIndex(x => x[0] === k); return k === 'other' ? 'var(--text-muted)' : colorOf(i); };
+  function kindOf(label, command) {
+    const l = String(label || '').toLowerCase();
+    for (const src of [l.replace(/^(review|rev)[-:_]/, ''), String(command || '').toLowerCase()])
+      for (const [k, , re] of CHECK_KINDS) if (re.test(src)) return k;
+    return /review|audit/.test(l) ? 'review' : 'other';
+  }
+  // per run: executions per kind; legacy lines only kept the labels that ended passing (count 1 each)
+  function runKinds(r) {
+    const by = {};
+    const labels = r.check_labels || (r.checks_passing || []).map(label => ({ label, runs: 1 }));
+    for (const c of labels) { const k = kindOf(c.label, c.command); by[k] = (by[k] || 0) + c.runs; }
+    return by;
+  }
+  const ranTests = r => { const k = runKinds(r); return (k.test || 0) + (k.e2e || 0) > 0; };
+  function verification(runs) {
+    const known = runs.filter(r => r.fix_cycles != null);
+    const fix = sum(known, r => r.fix_cycles), withFix = known.filter(r => r.fix_cycles > 0).length;
+    const tested = runs.filter(ranTests).length;
+    $('verification-headline').textContent = `${tested} of ${runs.length} runs ran tests · ${fix} fix cycle${fix === 1 ? '' : 's'}`;
+    $('verification-sub').textContent = `${sum(runs, r => r.checks_run)} checks run, ${sum(runs, r => r.checks_failed)} failed · ${withFix} run${withFix === 1 ? '' : 's'} went through at least one fail → fix → pass loop` +
+      (known.length < runs.length ? ` · fix cycles unknown for ${runs.length - known.length} legacy run${runs.length - known.length === 1 ? '' : 's'}` : '');
+    $('legend-checks').replaceChildren(...KIND_LABELS.map(([k, l]) => h('span', {}, h('i', { class: 'sw', style: `background:${kindColor(k)}` }), l)));
+    $('note-verification').textContent = 'How check kinds are guessed: from each check’s label (a leading “review-” is stripped), then from its command; first match wins in this order — ' +
+      'E2E / render (e2e, playwright, cypress, render, screenshot, visual, browser), Lint / format (lint, clippy, eslint, biome, fmt, format, prettier, ruff, shellcheck), ' +
+      'Typecheck (typecheck, tsc, mypy, pyright, cargo check), Test (test, suite, spec, jest, vitest, pytest, rspec, smoke), Build (build, compile, bundle); ' +
+      'otherwise Review if the label says review or audit, else Other. “Ran tests” = at least one Test or E2E / render check. Test files touched = files with “test” in their path in the branch diff (metrics.sh). ' +
+      'A fix cycle is a check label that failed and later passed in the same run. Legacy runs kept only the labels that ended passing, so their kinds are partial and fix cycles unknown.';
+    if (!runs.length) { $('table-verification').replaceChildren(h('div', { class: 'empty' }, 'No runs match these filters.')); return; }
+    const rs = [...runs].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    $('table-verification').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Run'), h('th', { class: 'num' }, 'Checks'), h('th', { class: 'num' }, 'Failed'), h('th', {}, 'Check kinds (executions)'),
+        h('th', { class: 'num' }, 'Test files touched'), h('th', { class: 'num' }, 'Fix cycles'), h('th', {}, 'Tests'))),
+      h('tbody', {}, rs.map(r => {
+        const by = runKinds(r), tot = sum(Object.values(by), v => v);
+        const order = KIND_LABELS.filter(([k]) => by[k]);
+        const kinds = tot ? h('div', {},
+          h('div', { class: 'kindbar' }, order.map(([k, l]) => h('div', { class: 'seg', style: `flex:${by[k]} 1 0; background:${kindColor(k)}`, tip: `<b>${esc(l)}</b> · ${by[k]} check run${by[k] === 1 ? '' : 's'}` }))),
+          h('div', { class: 'small muted' }, order.map(([k, l]) => `${l.toLowerCase()} ${by[k]}`).join(' · ') + (r.check_labels ? '' : ' (passing labels only)'))) : h('span', { class: 'muted' }, 'no checks recorded');
+        return h('tr', {},
+          h('td', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 50)),
+          h('td', { class: 'num' }, r.checks_run ?? '–'), h('td', { class: 'num' }, r.checks_failed ?? '–'),
+          h('td', { style: 'min-width:220px' }, kinds),
+          h('td', { class: 'num' }, r.test_files_touched ?? '–'),
+          h('td', { class: 'num', title: (r.fix_cycle_labels || []).join(', ') || null }, r.fix_cycles == null ? '–' : r.fix_cycles),
+          h('td', {}, ranTests(r) ? h('span', { class: 'badge' }, h('span', { class: 'dot', style: 'background:var(--good)' }), 'ran') : h('span', { class: 'muted' }, 'none recorded')));
+      }))));
+  }
+
   const ago = iso => { if (!iso) return 'never'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
   let reachable = true;
   function status() {
@@ -600,7 +674,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   function render() {
     const runs = filtered();
     status();
-    tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
+    tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); verification(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
     $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skills/rosalbito/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
   }
   render();
