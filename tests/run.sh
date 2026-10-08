@@ -232,6 +232,10 @@ check "collect: the run's commit on its branch is measured" '[ "$(gx r-rewritten
 git -C "$G" reset -q --hard HEAD~1                                                     # ...until the branch is rewritten
 check "collect: a branch rewritten after the run gives diff null" '[ "$(gx r-rewritten)" = null ] && jq -e "select(.run_id==\"r-rewritten\") | .test_files_touched==null" "$GH/runs.jsonl" >/dev/null'
 check "collect: branch == base with nothing committed gives null, not 0" '[ "$(gx r-idle)" = null ]'
+# origin/ ahead of the local branch: the fresher copy is measured
+git -C "$G" checkout -q feature/cut && gc 2021-01-01T02:45:00Z tests/y.test.sh 3
+git -C "$G" update-ref refs/remotes/origin/feature/cut HEAD && git -C "$G" reset -q --hard HEAD~1 && git -C "$G" checkout -q main
+check "collect: origin/ ahead of the local branch is measured" '[ "$(gx r-cut | jq -c "[.files, .added, .test_files]")" = "[2,5,2]" ]'
 # runs reading the same session over overlapping windows: flagged, identical usage counted once
 { am 2021-01-01T08:10:00.000Z sh1 q1 claude-opus-5-5 high 0 10 0 1000 10
   am 2021-01-01T09:30:00.000Z sh2 q2 claude-opus-5-5 high 0 10 0 2000 10; } > "$P/sess-shared.jsonl"
