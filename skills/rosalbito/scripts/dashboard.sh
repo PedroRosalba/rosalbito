@@ -4,15 +4,20 @@
 #   dashboard.sh --serve [--open]     live: dashboard-server.mjs on http://localhost:$ROSALBITO_PORT (7777);
 #                                     the page updates itself as runs progress (Ctrl-C stops it)
 #   dashboard.sh --install-service    keep the live server running in the background (macOS launchd,
-#                                     starts at login); --uninstall-service removes it
+#                                     starts at login) from a copy in $ROSALBITO_HOME/service, so it
+#                                     survives plugin updates; re-run to pick up a newer version.
+#                                     --uninstall-service removes it
 #   dashboard.sh [--no-collect] [--open] [root ...]
 #                                     snapshot: collect.sh, then $ROSALBITO_HOME/dashboard.html
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-[ "${1:-}" = "--help" ] && { sed -n '2,10p' "$0"; exit 0; }
+[ "${1:-}" = "--help" ] && { sed -n '2,12p' "$0"; exit 0; }
 PORT="${ROSALBITO_PORT:-7777}"
 LABEL="com.rosalbito.dashboard"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+SVC="${ROSALBITO_HOME:?}/service"   # the service runs a copy: plugin cache paths are versioned and get removed
+MARK=".rosalbito-dashboard-service"  # only a directory carrying this marker is ever deleted
+ours() { [ ! -e "$1" ] || [ -f "$1/$MARK" ]; }
 COLLECT=1; OPEN=0; SERVE=0; ROOTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -23,12 +28,16 @@ while [ $# -gt 0 ]; do
       command -v launchctl >/dev/null || die "launchd not available (macOS only); use --serve"
       NODE="$(command -v node)" || die "node is required"
       mkdir -p "$(dirname "$PLIST")" "$ROSALBITO_HOME"
+      ours "$SVC" && ours "$SVC.new" || die "$SVC exists and was not created by rosalbito; leaving it alone"
+      rm -rf "$SVC.new" && mkdir -p "$SVC.new" && touch "$SVC.new/$MARK" \
+        && cp -R "$SKILL_DIR/scripts" "$SKILL_DIR/templates" "$SKILL_DIR/config" "$SVC.new/" \
+        && rm -rf "$SVC" && mv "$SVC.new" "$SVC" || die "could not copy the server into $SVC"
       cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$NODE</string><string>$SKILL_DIR/scripts/dashboard-server.mjs</string></array>
+  <key>ProgramArguments</key><array><string>$NODE</string><string>$SVC/scripts/dashboard-server.mjs</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>$PATH</string>
     <key>ROSALBITO_PORT</key><string>$PORT</string>
@@ -46,7 +55,7 @@ EOF
       exit 0;;
     --uninstall-service)
       launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-      rm -f "$PLIST"; echo "service $LABEL removed"; exit 0;;
+      rm -f "$PLIST"; if [ -f "$SVC/$MARK" ]; then rm -rf "$SVC"; elif [ -e "$SVC" ]; then echo "note: $SVC was not created by rosalbito; left in place" >&2; fi; echo "service $LABEL removed"; exit 0;;
     *) ROOTS+=("$1"); shift;;
   esac
 done

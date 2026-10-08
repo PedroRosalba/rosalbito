@@ -35,15 +35,25 @@ CLASSIFY (risk + human dependency) → (UNDERSTAND) → ACCEPTANCE
 
 ## Install
 
-```bash
-git clone https://github.com/PedroRosalba/rosalbito ~/rosalbito
-cd ~/rosalbito && ./install.sh      # symlinks the skill, registers the guard hook
+As a Claude Code plugin (this repository is both the marketplace and the plugin), in Claude Code:
+
+```
+/plugin marketplace add PedroRosalba/rosalbito
+/plugin install rosalbito@rosalbito
 # optional loop driver (recommended):
-#   in Claude Code: /plugin install ralph-loop@claude-plugins-official
+/plugin install ralph-loop@claude-plugins-official
 ```
 
+That installs three things: the `rosalbito` skill, the companion `telemetry` skill
+(model-invoked: the implementer reaches for it on telemetry-shaped work), and the PreToolUse guard hook (the hard gate below),
+registered by the plugin itself: no hook entry is written to `settings.json` (Claude Code only records that the plugin is enabled). Update with
+`/plugin marketplace update rosalbito` then `/plugin update rosalbito@rosalbito`; remove with
+`/plugin uninstall rosalbito@rosalbito`.
+
 Restart Claude Code **inside the target repository** (the loop driver's Stop hook is bound
-to the session's directory). Then:
+to the session's directory). The skill answers to `/rosalbito` (the plugin-qualified name
+`/rosalbito:rosalbito` always works too, and is the one to use if another skill called
+`rosalbito` is installed). Then:
 
 ```
 /rosalbito add an integration test that runs the CLI on the sample CSV
@@ -59,6 +69,48 @@ Recommended primitives (Rosalbito routes to them; `/rosalbito` stays the only en
 
 Requires: Claude Code, `git`, `gh` (authenticated), `jq`, bash 3.2+ (macOS default works).
 
+### Standalone install (alternative)
+
+Without the plugin system, from a clone:
+
+```bash
+git clone https://github.com/PedroRosalba/rosalbito ~/rosalbito
+cd ~/rosalbito && ./install.sh      # symlinks both skills, registers the guard hook in ~/.claude/settings.json
+```
+
+`install.sh` is idempotent, registers the hook path quoted, backs up `settings.json` before
+every real edit, and refuses to write it if the file is not valid JSON. The skill moved from
+`skill/` to `skills/rosalbito/`; a `skill` symlink keeps the old hook path working, and
+re-running `./install.sh` after pulling moves the links and the hook to the new path.
+
+Use **one** install, not both: with the plugin and `install.sh` active together the guard
+runs twice and every skill is listed twice.
+
+### Switching from install.sh to the plugin
+
+Install the plugin first (the two `/plugin` commands above), then remove the standalone
+install, so there is never a window without the guard (running it twice meanwhile is
+harmless):
+
+```bash
+cd ~/rosalbito && git pull           # an older install.sh does not know --uninstall
+./install.sh --uninstall             # removes ~/.claude/skills/{rosalbito,telemetry} links and the rosalbito-guard hook entry
+```
+
+Before uninstalling, check that the plugin's guard is live: `/hooks` should list the
+rosalbito plugin's `PreToolUse` hook. `--uninstall` refuses while the plugin is not enabled
+in `settings.json` (it would leave no guard at all); `--uninstall --force` overrides that.
+It only removes symlinks that point into a rosalbito checkout, leaves every other hook in
+`settings.json` alone, and backs the file up first. Restart Claude Code. (By hand: delete
+the two symlinks and the `PreToolUse` entry whose command contains `rosalbito-guard.sh`.)
+If `git pull` aborts with "untracked working tree files would be overwritten", move the
+untracked files out of `skill/` first: the old guard path keeps working until you do.
+
+The `skill -> skills/rosalbito` link keeps hook paths registered by older standalone installs
+working. Removing it would silently disable those guards (a missing hook file is a
+non-blocking error), so it stays until standalone install mode is retired; the PR that
+removes it must also make `install.sh` and the preflight refuse a dead guard path.
+
 ## How a run works
 
 | Risk tier | What happens |
@@ -69,18 +121,20 @@ Requires: Claude Code, `git`, `gh` (authenticated), `jq`, bash 3.2+ (macOS defau
 | HIGH | + read-only understanding pass, security review, architecture review. Reviewers re-run the checks themselves. |
 | CRITICAL | + independent correctness review, full engineering report, decision record for every non-obvious choice. |
 
-Path floors (`skill/config/risk-overrides.yaml`): anything touching auth, payments,
+Path floors (`skills/rosalbito/config/risk-overrides.yaml`): anything touching auth, payments,
 migrations, secrets, CI or infrastructure is HIGH at minimum, whatever the model thinks.
 
 The human axis is separate: `none | visibility | decision | hard_gate`. Visibility is the
 default even for CRITICAL work. `decision` fires only for the triggers in
-`skill/references/routing.md`, after the inference sources are exhausted, and stops
+`skills/rosalbito/references/routing.md`, after the inference sources are exhausted, and stops
 *before* implementation. `hard_gate` is operation-triggered and backed by the hook.
 
 ## Layout
 
 ```
-skill/                      the Claude Code skill (symlinked to ~/.claude/skills/rosalbito)
+.claude-plugin/             plugin.json + marketplace.json (the repo is its own marketplace)
+hooks/hooks.json            plugin hook registration: the guard on every Bash call
+skills/rosalbito/           the Claude Code skill (standalone: symlinked to ~/.claude/skills/rosalbito)
   SKILL.md                  thin orchestrator (~200 lines): dispatch, classify, loop, understand and grill modes
   config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/), pricing.json
   scripts/                  init-context, init-run, state, verify, detect-checks, classify-paths,
@@ -89,9 +143,12 @@ skill/                      the Claude Code skill (symlinked to ~/.claude/skills
   hooks/rosalbito-guard.sh  PreToolUse hard gate
   templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md, dashboard.html
   references/               routing, driver, reviews, understanding, reports, state-schema
-skills/telemetry/           generic telemetry-engineering skill (model-invoked; symlinked to ~/.claude/skills/telemetry)
-install.sh                  symlinks + hook registration (idempotent, backs up settings.json)
-tests/run.sh                94 deterministic checks for scripts and the hook
+skill -> skills/rosalbito   compatibility link: keeps hook paths from older standalone installs working
+skills/telemetry/           generic telemetry-engineering skill (model-invoked; standalone: symlinked to ~/.claude/skills/telemetry)
+install.sh                  standalone install: symlinks + hook registration, --uninstall (idempotent, backs up settings.json)
+tests/run.sh                101 deterministic checks for scripts, the hook and the packaging
+tests/plugin-hook.sh        the guard run exactly as hooks/hooks.json registers it
+tests/standalone-install.sh install.sh / --uninstall against a throwaway HOME
 tests/resume-test.sh        kill-a-session-mid-run test (real model calls)
 docs/                       spec, inventory, reuse-vs-build, driver decision
 ```
@@ -116,10 +173,14 @@ Run write-ups and experiment logs are kept locally too, not in this repository.
 ## Observability
 
 ```bash
-bash skill/scripts/dashboard.sh --serve --open    # live: http://localhost:7777, updates itself
-bash skill/scripts/dashboard.sh --install-service # same, kept running by launchd (starts at login)
-bash skill/scripts/dashboard.sh --open            # one-off static snapshot: ~/.rosalbito/dashboard.html
+bash skills/rosalbito/scripts/dashboard.sh --serve --open    # live: http://localhost:7777, updates itself
+bash skills/rosalbito/scripts/dashboard.sh --install-service # same, kept running by launchd (starts at login)
+bash skills/rosalbito/scripts/dashboard.sh --open            # one-off static snapshot: ~/.rosalbito/dashboard.html
 ```
+
+Paths are relative to a clone; with the plugin, `/rosalbito dashboard` finds the script for you.
+`--install-service` runs a copy of the server from `~/.rosalbito/service/` (plugin paths are
+versioned and replaced on update); re-run it after updating to pick up a newer dashboard.
 
 Every run, in every repo, on one local page (`~/.rosalbito/dashboard.html`): outcome, wall
 time, iterations, checks, review rejections, subagents spawned, and API-equivalent cost per
@@ -161,7 +222,10 @@ templates and are only expanded against failures observed in real runs.
 ## Development
 
 ```bash
-bash tests/run.sh          # script + hook tests (throwaway git repo, no network)
+bash tests/run.sh          # script + hook + packaging tests (throwaway git repo and HOME, no network)
+claude plugin validate .                            # marketplace manifest (and the plugin it lists)
+claude plugin validate .claude-plugin/plugin.json   # plugin manifest
+claude --plugin-dir .      # load this checkout as the plugin for one session
 ```
 
 ## License

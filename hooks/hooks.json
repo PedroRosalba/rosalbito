@@ -1,0 +1,17 @@
+{
+  "description": "Rosalbito hard gate: denies force-push, push to main/master, PR merges, --prod deploys, destructive SQL and similar operations before any Bash command runs.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/rosalbito/hooks/rosalbito-guard.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
