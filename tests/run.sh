@@ -4,7 +4,7 @@
 # Note: greps consume all input (no -q) because pipefail would turn a SIGPIPE into a failure.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export SKILL_DIR="$HERE/skill"
+export SKILL_DIR="$HERE/skills/rosalbito"
 S="$SKILL_DIR/scripts"
 HOOK="$SKILL_DIR/hooks/rosalbito-guard.sh"
 PASS=0; FAIL=0

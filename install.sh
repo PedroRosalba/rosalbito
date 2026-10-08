@@ -5,7 +5,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS="$HOME/.claude/skills"
 SETTINGS="$HOME/.claude/settings.json"
-HOOK="$HERE/skill/hooks/rosalbito-guard.sh"
+HOOK="$HERE/skills/rosalbito/hooks/rosalbito-guard.sh"
 
 mkdir -p "$SKILLS"
 link_skill() {  # link_skill <name> <source dir>
@@ -15,7 +15,7 @@ link_skill() {  # link_skill <name> <source dir>
     echo "warning: $SKILLS/$1 exists and is not a symlink; leaving it alone" >&2
   fi
 }
-link_skill rosalbito "$HERE/skill"
+link_skill rosalbito "$HERE/skills/rosalbito"
 link_skill telemetry "$HERE/skills/telemetry"
 
 command -v jq >/dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
