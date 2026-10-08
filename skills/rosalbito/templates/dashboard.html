@@ -92,6 +92,13 @@ a { color: var(--accent); }
 #tip b { font-weight: 600; }
 .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
 footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+h2 .fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border-radius: 4px; }
+h2 .fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h2 .fold::before { content: ""; width: 0; height: 0; border-left: 5px solid var(--text-secondary); border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent; transition: transform .15s; }
+h2 .fold[aria-expanded="true"]::before { transform: rotate(90deg); }
+.card.folded .card-head { margin-bottom: 0; }
+.card.folded .card-tools { display: none; }
 </style>
 </head>
 <body>
@@ -113,39 +120,41 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
 
   <section class="tiles" id="tiles"></section>
 
-  <section class="card">
+  <section class="card" data-section="attention">
     <div class="card-head"><div><h2>Needs attention</h2><p class="sub small">Gaps in the harness's own bookkeeping, and runs worth a look</p></div></div>
-    <ul class="flags" id="flags"></ul>
+    <div class="card-body"><ul class="flags" id="flags"></ul></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-section="cost-roles">
     <div class="card-head">
       <div><h2>Cost per run, by agent role</h2><p class="sub small">API-equivalent USD from Claude Code transcripts. Hover a segment for detail.</p></div>
-      <button id="t-runs" aria-pressed="false">Table</button>
+      <div class="card-tools"><button id="t-runs" aria-pressed="false">Table</button></div>
     </div>
-    <div class="legend" id="legend-roles"></div>
-    <div id="chart-runs"></div>
+    <div class="card-body">
+      <div class="legend" id="legend-roles"></div>
+      <div id="chart-runs"></div>
+    </div>
   </section>
 
   <div class="grid2">
-    <section class="card">
+    <section class="card" data-section="kinds">
       <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs</p></div></div>
-      <div id="chart-kinds"></div>
+      <div class="card-body"><div id="chart-kinds"></div></div>
     </section>
-    <section class="card">
+    <section class="card" data-section="roles">
       <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs</p></div></div>
-      <div class="scroll" id="table-roles"></div>
+      <div class="card-body"><div class="scroll" id="table-roles"></div></div>
     </section>
   </div>
 
-  <section class="card">
+  <section class="card" data-section="runs">
     <div class="card-head"><div><h2>Runs</h2><p class="sub small">Click a row for its agents</p></div></div>
-    <div class="scroll" id="table-runs"></div>
+    <div class="card-body"><div class="scroll" id="table-runs"></div></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-section="tools" data-default="closed">
     <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs</p></div></div>
-    <div class="scroll" id="table-tools"></div>
+    <div class="card-body"><div class="scroll" id="table-tools"></div></div>
   </section>
 
   <footer id="footer"></footer>
@@ -229,6 +238,23 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
     const y = e.clientY + 14 + tip.offsetHeight > window.innerHeight ? e.clientY - tip.offsetHeight - 10 : e.clientY + 14;
     tip.style.left = x + 'px'; tip.style.top = y + 'px';
   });
+  // collapsible sections: open/closed per section survives reloads (when storage is available)
+  const SECTION_KEY = 'rosalbito-dashboard-sections';
+  let sectionState = {};
+  try { sectionState = JSON.parse(localStorage.getItem(SECTION_KEY) || '{}') || {}; } catch (e) {}
+  for (const sec of document.querySelectorAll('section.card[data-section]')) {
+    const id = sec.dataset.section, body = sec.querySelector('.card-body'), title = sec.querySelector('.card-head h2');
+    body.id = 'section-' + id;
+    const btn = h('button', { class: 'fold', type: 'button', 'aria-controls': body.id }, ...title.childNodes);
+    title.replaceChildren(btn);
+    const set = open => { body.hidden = !open; btn.setAttribute('aria-expanded', String(open)); sec.classList.toggle('folded', !open); };
+    set(typeof sectionState[id] === 'boolean' ? sectionState[id] : sec.dataset.default !== 'closed');
+    btn.addEventListener('click', () => {
+      const open = body.hidden; set(open); sectionState[id] = open;
+      try { localStorage.setItem(SECTION_KEY, JSON.stringify(sectionState)); } catch (e) {}
+    });
+  }
+
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   function tiles(runs) {
