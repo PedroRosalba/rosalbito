@@ -165,9 +165,23 @@ check "usage: total tokens per agent and run"   'jq -e "(.agents[] | select(.age
 check "usage: effort mix and model mix totals"  'jq -e ".totals.effort_mix=={\"high\":2,\"medium\":1,\"unknown\":1,\"xhigh\":1} and .totals.model_mix=={\"claude-opus-5-5\":6729,\"claude-sonnet-5-5\":102}" <<< "$ue" >/dev/null'
 check "usage: existing fields unchanged"         'jq -e ".totals.messages==5 and .totals.input_tokens==36 and .totals.cache_write_tokens==100 and .totals.cache_read_tokens==6600 and .totals.output_tokens==95 and (.agents|map(has(\"_model_tokens\"))|any|not)" <<< "$ue" >/dev/null'
 check "metrics line carries usage + version"   'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
+# +4 -1 in 2 files on the run branch, committed (by date) after the second run started
+CD="$(epoch_to_iso $(( $(iso_to_epoch "$ST2") + 5 )))"
+printf 'a\nb\nc\n' > feature.txt && echo bye > README.md && git add feature.txt README.md \
+  && GIT_COMMITTER_DATE="$CD" GIT_AUTHOR_DATE="$CD" git commit -qm feat feature.txt README.md
 bash "$S/collect.sh" "$TMP" >/dev/null
 check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ] && jq -se "map(.status)|sort==[\"classifying\",\"done\"]" "$ROSALBITO_HOME/runs.jsonl" >/dev/null'
 check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
+IX() { jq -c --arg r "$1" "select(.run_id==\$r)" "$ROSALBITO_HOME/runs.jsonl"; }
+check "collect: input size from task and first context" 'IX "$RUN2" | jq -e ".input_size.task_chars==11 and .input_size.first_context_tokens==1002000" >/dev/null'
+check "collect: real branch diff vs base merge-base" 'IX "$RUN2" | jq -e ".input_size.diff | .files==2 and .added==4 and .removed==1 and .branch==\"feature/add-ci-badge-to-readme\" and .base_branch==.branch and .head==\"$(git rev-parse HEAD)\" and .base==\"$(git rev-parse HEAD~1)\"" >/dev/null'
+check "collect: fix cycles carried into the index" 'IX "$RUN" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"]" >/dev/null'
+jq -c 'if .input_size.diff then .input_size.diff.files=99 else . end' "$ROSALBITO_HOME/runs.jsonl" > "$TMP/ix" && mv "$TMP/ix" "$ROSALBITO_HOME/runs.jsonl"
+check "collect: numstat reused while base and head are unchanged" 'bash "$S/collect.sh" "$TMP" >/dev/null && IX "$RUN2" | jq -e ".input_size.diff.files==99" >/dev/null'
+sed -i.bak 's#^branch: .*#branch: feature/gone#' ".agent/runs/$RUN/state.md" && rm -f ".agent/runs/$RUN/state.md.bak"
+check "collect: missing branch gives diff null, not a guess" 'bash "$S/collect.sh" --full "$TMP" >/dev/null && IX "$RUN" | jq -e ".input_size.diff==null and .input_size.task_chars==22" >/dev/null'
+rm -f "$ROSALBITO_HOME/runs.jsonl" && bash "$S/collect.sh" "$TMP" >/dev/null
+check "collect: a fresh index measures the diff again" 'IX "$RUN2" | jq -e ".input_size.diff.files==2" >/dev/null'
 bash "$S/dashboard.sh" --no-collect >/dev/null
 check "dashboard renders with data inlined"     'grep >/dev/null "$RUN2" "$ROSALBITO_HOME/dashboard.html" && ! grep >/dev/null "__ROSALBITO_DATA__" "$ROSALBITO_HOME/dashboard.html"'
 check "incremental collect reuses unchanged runs" 'bash "$S/collect.sh" "$TMP" >/dev/null && [ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ]'
