@@ -448,12 +448,14 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       (r.has_report ? ' · report.md ✓' : '') + (r.has_blocked_report ? ' · blocked.md ✓' : '') + ` · ${r.repo_path || ''}`);
     if (!as.length) return h('div', {}, meta, h('div', { class: 'muted small' }, 'No transcript data for this run.'));
     return h('div', {}, meta, h('table', {},
-      h('thead', {}, h('tr', {}, ['Agent', 'Role', 'Type', 'Model', 'Msgs', 'Cache read', 'Cache write', 'Output', 'Cost', 'Top tools'].map((t, i) => h('th', { class: i >= 4 && i <= 8 ? 'num' : null }, t)))),
+      h('thead', {}, h('tr', {}, ['Agent', 'Role', 'Type', 'Model', 'Effort', 'Msgs', 'Total tokens', 'Peak context', 'Cache read', 'Cache write', 'Output', 'Cost', 'Top tools'].map((t, i) => h('th', { class: i >= 5 && i <= 11 ? 'num' : null }, t)))),
       h('tbody', {}, as.map(a => h('tr', {},
         h('td', {}, (a.depth > 1 ? '↳ ' : '') + a.description),
         h('td', {}, a.role), h('td', { class: 'small muted' }, a.agent_type + (a.background ? ' · bg' : '')),
         h('td', { class: 'small' }, a.models.join(', ')),
-        h('td', { class: 'num' }, a.messages), h('td', { class: 'num' }, tok(a.cache_read_tokens)), h('td', { class: 'num' }, tok(a.cache_write_tokens)),
+        h('td', { class: 'small', title: a.effort_messages ? Object.entries(a.effort_messages).map(([k, v]) => `${k} ${v}`).join(', ') + (a.thinking_ms ? ` · thinking ${Math.round(a.thinking_ms / 1000)}s` : '') : null }, a.effort || '–'),
+        h('td', { class: 'num' }, a.messages), h('td', { class: 'num' }, tok(a.total_tokens)), h('td', { class: 'num', title: a.first_context_tokens != null ? `first request ${tok(a.first_context_tokens)}` : null }, tok(a.peak_context_tokens)),
+        h('td', { class: 'num' }, tok(a.cache_read_tokens)), h('td', { class: 'num' }, tok(a.cache_write_tokens)),
         h('td', { class: 'num', title: a.output_estimated_messages ? 'partly estimated' : null }, tok(a.output_tokens) + (a.output_estimated_messages ? '*' : '')),
         h('td', { class: 'num' }, usd(a.cost_usd)),
         h('td', { class: 'small muted' }, Object.entries(a.tools || {}).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(' · ')))))));
