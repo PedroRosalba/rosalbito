@@ -13,11 +13,18 @@
 # Subagent transcripts often keep only the streaming-start usage (stop_reason null): input
 # and cache counts are exact, output is then estimated as max(reported, chars/4) of the
 # visible content and counted in output_estimated_messages (hidden thinking is not seen).
+# Effort: each assistant message's reasoning effort (`effort`, else `perTurnEffort`; "unknown"
+# when the transcript has neither). Per agent: effort_messages {level: messages}, effort = the
+# dominant known level. thinking_ms sums `thinkingDurationMs` (wall time spent thinking, not
+# tokens; absent on some messages). Context of a request = input + cache write + cache read;
+# first_context_tokens / peak_context_tokens are its first and largest value per agent, and
+# total_tokens adds output (so it inherits the output estimate above). Totals: total_tokens,
+# thinking_ms, effort_mix {level: messages}, model_mix {model: total_tokens}.
 # Transcripts: $CLAUDE_PROJECTS_DIR (default ~/.claude/projects). Prices: config/pricing.json.
 # Prints one JSON object: {sessions, agents:[...], totals}.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-[ "${1:-}" = "--help" ] && { sed -n '2,17p' "$0"; exit 0; }
+[ "${1:-}" = "--help" ] && { sed -n '2,24p' "$0"; exit 0; }
 
 RUN_ID=""; START=""; END=""; SESSIONS=""
 while [ $# -gt 0 ]; do
@@ -47,7 +54,7 @@ records="$(mktemp)"; metas="$(mktemp)"; trap 'rm -f "$records" "$metas"' EXIT
 SEL='select(.type=="assistant" and .message.usage != null and .timestamp >= $s and .timestamp <= $e)
   | {sess:$sess, agent:(if .isSidechain == true then (.agentId // "sidechain") else $agent end),
      id:(.message.id // .uuid), ts:.timestamp, model:(.message.model // "unknown"), u:.message.usage,
-     final:(.message.stop_reason != null),
+     final:(.message.stop_reason != null), uuid:.uuid, effort:(.effort // .perTurnEffort), th:(.thinkingDurationMs // 0),
      chars:([.message.content[]? | if .type=="text" then (.text|length) elif .type=="tool_use" then (.input|tostring|length) else 0 end] | add // 0),
      tools:[.message.content[]? | select(.type=="tool_use") | .name]}'
 echo '{}' > "$metas"
@@ -95,9 +102,16 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
   (group_by([.sess, .agent]) | map(
      .[0] as $f | ($M[$f.agent] // {}) as $meta |
      (group_by(.id) | map(
-        (map(.chars) | add) as $chars | (map(select(.final)) | length > 0) as $final | max_by(.u.output_tokens // 0)
+        (map(.chars) | add) as $chars | (map(select(.final)) | length > 0) as $final
+        | (map(.effort) | map(select(. != null)) | first // null) as $eff
+        | ((map(select(.uuid != null)) | unique_by(.uuid)) + map(select(.uuid == null)) | map(.th) | add // 0) as $th
+        | max_by(.u.output_tokens // 0)
         | if $final then .est = false else .est = true | .u.output_tokens = ([(.u.output_tokens // 0), (($chars / 4) | ceil)] | max) end
+        | .effort = $eff | .th = $th
+        | .ctx = ((.u.input_tokens // 0) + cw5(.u) + cw1(.u) + (.u.cache_read_input_tokens // 0))
+        | .tot = (.ctx + (.u.output_tokens // 0))
       )) as $msgs |
+     ($msgs | map(.effort // "unknown") | group_by(.) | map({key: .[0], value: length}) | from_entries) as $em |
      {session: $f.sess, agent_id: $f.agent,
       description: (if $f.agent == "main" then "orchestrator (main session)" else ($meta.description // "") end),
       agent_type: (if $f.agent == "main" then "main" else ($meta.agentType // "unknown") end),
@@ -117,10 +131,17 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
         output: ($msgs | map(price(.model) as $p | if $p then (.u.output_tokens // 0) * $p.output / 1e6 else 0 end) | add // 0),
         cache_write: ($msgs | map(price(.model) as $p | if $p then (cw5(.u) * $p.cache_write_5m + cw1(.u) * $p.cache_write_1h) / 1e6 else 0 end) | add // 0),
         cache_read: ($msgs | map(price(.model) as $p | if $p then (.u.cache_read_input_tokens // 0) * $p.cache_read / 1e6 else 0 end) | add // 0)},
-      tools: ([.[].tools[]] | group_by(.) | map({key: .[0], value: length}) | from_entries)}
+      tools: ([.[].tools[]] | group_by(.) | map({key: .[0], value: length}) | from_entries),
+      effort: ($em | to_entries | map(select(.key != "unknown")) | sort_by(-.value, .key) | first.key // null),
+      effort_messages: $em,
+      thinking_ms: ($msgs | sumk(.th)),
+      total_tokens: ($msgs | sumk(.tot)),
+      first_context_tokens: ($msgs | min_by(.ts) | .ctx),
+      peak_context_tokens: ($msgs | map(.ctx) | max),
+      _model_tokens: ($msgs | group_by(.model) | map({key: .[0].model, value: (map(.tot) | add)}) | from_entries)}
      | .role = role)) as $agents |
   {sessions: $sessions,
-   agents: ($agents | sort_by(.first_ts)),
+   agents: ($agents | sort_by(.first_ts) | map(del(._model_tokens))),
    totals: {
      agents_spawned: ($agents | map(select(.agent_id != "main")) | length),
      max_depth: ($agents | map(.depth) | max // 0),
@@ -131,6 +152,10 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
      cache_write_tokens: ($agents | sumk(.cache_write_tokens)),
      cache_read_tokens: ($agents | sumk(.cache_read_tokens)),
      cost_usd: ($agents | sumk(.cost_usd)),
+     total_tokens: ($agents | sumk(.total_tokens)),
+     thinking_ms: ($agents | sumk(.thinking_ms)),
+     effort_mix: ($agents | map(.effort_messages | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries),
+     model_mix: ($agents | map(._model_tokens | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries),
      cache_hit_ratio: (($agents | sumk(.cache_read_tokens)) as $r | ($agents | sumk(.cache_write_tokens + .input_tokens)) as $w
                        | if ($r + $w) > 0 then $r / ($r + $w) else null end),
      cost_by_role: ($agents | group_by(.role) | map({key: .[0].role, value: (map(.cost_usd) | add)}) | from_entries),
