@@ -108,6 +108,16 @@ else
   check "driver none recorded"                  '[ "$(bash "$S/state.sh" get driver)" = "none" ]'
 fi
 check "metrics line is JSON"                    'bash "$S/metrics.sh" | jq -e ".iterations==3 and .checks_run==5 and .checks_failed==3" >/dev/null'
+# fix cycles are fail -> pass transitions; exit null is unknown; "x-2" links to "x" only when "x" exists
+FC="$TMP-fc"; mkdir -p "$FC/.agent/runs/fc"
+printf -- '---\nrun_id: fc\nstatus: done\nstarted_at: 2021-01-01T00:00:00Z\nupdated_at: 2021-01-01T00:10:00Z\n---\n' > "$FC/.agent/runs/fc/state.md"
+for e in 'a 1 A' 'a 0 A' 'a 1 A' 'a 1 A' 'a 0 B' 'b 1 X' 'b null X' 'b 0 X' 'c null X' 'c 0 X' 'd 1 X' 'e 0 X' 'e-2 1 X' 'e-2 0 X' 'f-2 1 X' 'f-2 0 X'; do
+  set -- $e; printf '{"label":"%s","exit":%s,"command":"%s"}\n' "$1" "$2" "$3"
+done > "$FC/.agent/runs/fc/evidence.jsonl"
+fcm="$(cd "$FC" && ROSALBITO_NO_USAGE=1 bash "$S/metrics.sh" --run "$FC/.agent/runs/fc")"
+check "metrics: fix cycles count fail->pass transitions" 'jq -e ".fix_cycles==5 and .fix_cycles_command_changed==1 and .fix_cycle_labels==[\"a\",\"b\",\"e\",\"f-2\"]" <<< "$fcm" >/dev/null'
+check "metrics: exit null is unknown, not a failure" 'jq -e "(.check_labels[] | select(.label==\"b\") | .failed==1 and .runs==3) and (.check_labels[] | select(.label==\"c\") | .failed==0)" <<< "$fcm" >/dev/null'
+rm -rf "$FC"
 check "metrics: fail-then-pass label is a fix cycle" 'bash "$S/metrics.sh" | jq -e ".fix_cycles==1 and .fix_cycle_labels==[\"boom\"] and (.check_labels|map(select(.label==\"boom\"))[0] | .runs==4 and .failed==3 and .last_exit==0)" >/dev/null'
 bash "$S/finish-run.sh" done --pr https://example.com/pr/1 >/dev/null; rc=$?
 check "finish-run done"                         '[ $rc -eq 0 ] && [ "$(bash "$S/state.sh" get status)" = "done" ]'
