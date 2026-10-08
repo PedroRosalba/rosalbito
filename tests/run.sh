@@ -139,7 +139,31 @@ check "role tag honored"                        'jq -e "([.agents[].role]|sort)=
 check "streamed chunks deduped, old msg outside window" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .messages==1 and .tools.Agent==1)" <<< "$u" >/dev/null'
 check "partial subagent output estimated"       'jq -e "(.agents[] | select(.agent_id==\"abc\") | .output_tokens==100 and .output_estimated_messages==1)" <<< "$u" >/dev/null'
 check "cost from pricing.json"                  'jq -e "(.totals.cost_usd * 1000 | round) == 431" <<< "$u" >/dev/null'
-check "metrics line carries usage + version"    'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
+# effort, thinking time and context sizes: a separate session, picked by --sessions only
+mkdir -p "$P/sess-b/subagents"
+am() {  # am <ts> <id> <uuid> <model> <effort|null> <thinking_ms|null> <input> <cache_write> <cache_read> <output>
+  local e='null'; [ "$5" = null ] || e="\"$5\""
+  printf '{"type":"assistant","timestamp":"%s","uuid":"%s","effort":%s,"perTurnEffort":%s,"thinkingDurationMs":%s,"message":{"id":"%s","model":"%s","stop_reason":"end_turn","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s},"content":[]}}\n' \
+    "$1" "$3" "$e" "$e" "$6" "$2" "$4" "$7" "$8" "$9" "${10}"
+}
+{
+  am 2021-01-01T00:00:01.000Z e1 u1 claude-opus-5-5 high 1000 10 100 1000 50
+  am 2021-01-01T00:00:01.000Z e1 u2 claude-opus-5-5 high null 10 100 1000 50      # 2nd chunk of e1
+  am 2021-01-01T00:00:02.000Z e2 u3 claude-opus-5-5 high 500 20 0 3000 30
+  am 2021-01-01T00:00:03.000Z e3 u4 claude-opus-5-5 medium 700 5 0 2000 10
+  am 2021-01-01T00:00:03.000Z e3 u4 claude-opus-5-5 medium 700 5 0 2000 10       # duplicated line: thinking counted once
+  am 2021-01-01T00:00:04.000Z e4 u5 claude-sonnet-5-5 null null 1 0 100 1
+} > "$P/sess-b.jsonl"
+am 2021-01-01T00:00:02.000Z x1 v1 claude-opus-5-5 xhigh 250 0 0 500 4 | sed 's/^{/{"isSidechain":true,"agentId":"def",/' > "$P/sess-b/subagents/agent-def.jsonl"
+echo '{"agentType":"general-purpose","description":"[implementer] fixture","spawnDepth":1}' > "$P/sess-b/subagents/agent-def.meta.json"
+ue="$(bash "$S/usage.sh" --run-id fixture-effort --start 2021-01-01T00:00:00Z --end 2021-01-01T00:01:00Z --sessions sess-b)"
+check "usage: effort per message, dominant per agent" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .effort==\"high\" and .effort_messages=={\"high\":2,\"medium\":1,\"unknown\":1}) and (.agents[] | select(.agent_id==\"def\") | .effort==\"xhigh\")" <<< "$ue" >/dev/null'
+check "usage: thinking ms summed, duplicate lines once" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .thinking_ms==2200) and .totals.thinking_ms==2450" <<< "$ue" >/dev/null'
+check "usage: first and peak context per agent" 'jq -e "(.agents[] | select(.agent_id==\"main\") | .first_context_tokens==1110 and .peak_context_tokens==3020) and (.agents[] | select(.agent_id==\"def\") | .first_context_tokens==500)" <<< "$ue" >/dev/null'
+check "usage: total tokens per agent and run"   'jq -e "(.agents[] | select(.agent_id==\"main\") | .total_tokens==6327) and .totals.total_tokens==6831" <<< "$ue" >/dev/null'
+check "usage: effort mix and model mix totals"  'jq -e ".totals.effort_mix=={\"high\":2,\"medium\":1,\"unknown\":1,\"xhigh\":1} and .totals.model_mix=={\"claude-opus-5-5\":6729,\"claude-sonnet-5-5\":102}" <<< "$ue" >/dev/null'
+check "usage: existing fields unchanged"         'jq -e ".totals.messages==5 and .totals.input_tokens==36 and .totals.cache_write_tokens==100 and .totals.cache_read_tokens==6600 and .totals.output_tokens==95 and (.agents|map(has(\"_model_tokens\"))|any|not)" <<< "$ue" >/dev/null'
+check "metrics line carries usage + version"   'bash "$S/metrics.sh" | jq -e ".usage.totals.agents_spawned==1 and (.harness_version|type)==\"string\" and .finished_at==null" >/dev/null'
 bash "$S/collect.sh" "$TMP" >/dev/null
 check "collect indexes done and open runs"      '[ "$(jq -s "length" "$ROSALBITO_HOME/runs.jsonl")" -eq 2 ] && jq -se "map(.status)|sort==[\"classifying\",\"done\"]" "$ROSALBITO_HOME/runs.jsonl" >/dev/null'
 check "repo registered by init/finish"          'grep >/dev/null -xF "$(pwd -P)" "$ROSALBITO_HOME/repos"'
