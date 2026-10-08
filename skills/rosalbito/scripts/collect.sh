@@ -117,7 +117,10 @@ while IFS= read -r repo; do
     rd="${rd%/}"
     [ -L "$rd" ] && continue                      # runs/current
     [ -f "$rd/state.md" ] || continue
-    line="$(cached_line "$(basename "$rd")" "$rd")" || line="$(cd "$repo" && bash "$SKILL_DIR/scripts/metrics.sh" --run "$rd")"
+    if line="$(cached_line "$(basename "$rd")" "$rd")" && jq -e '.input_size and (.status == "done" or .status == "blocked")' >/dev/null 2>&1 <<< "$line"; then
+      echo "$line" >> "$TMPOUT" && n=$((n + 1)); continue   # finished and unchanged: its diff is fixed (--full re-measures)
+    fi
+    [ -n "$line" ] || line="$(cd "$repo" && bash "$SKILL_DIR/scripts/metrics.sh" --run "$rd")"
     [ -n "$line" ] && with_input_size "$line" "$rd" >> "$TMPOUT" && n=$((n + 1))
   done
   # legacy lines (pre context/runs layout, or a run dir removed since)
