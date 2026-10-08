@@ -589,21 +589,53 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   }
 
   // verification: what the evidence says about testing and debugging
-  const CHECK_KINDS = [   // first match wins, on the label (a review- prefix stripped), then the command
-    ['e2e', 'E2E / render', /e2e|playwright|cypress|render|screenshot|visual|browser|lighthouse/],
-    ['lint', 'Lint / format', /lint|clippy|eslint|biome|fmt|format|prettier|ruff|shellcheck/],
-    ['typecheck', 'Typecheck', /typecheck|type-check|\btsc\b|mypy|pyright|cargo check/],
-    ['test', 'Test', /test|suite|\bspec\b|jest|vitest|pytest|rspec|smoke/],
-    ['build', 'Build', /build|compile|bundle/],
+  // <check-kinds> how a check is classified; tests/run.sh runs this block under node
+  const KIND_LABELS = [['e2e', 'E2E / render'], ['lint', 'Lint / format'], ['typecheck', 'Typecheck'], ['test', 'Test'], ['build', 'Build'], ['review', 'Review'], ['other', 'Other']];
+  const LABEL_KIND = [   // the label states the intent (a leading "review-" is stripped first)
+    ['e2e', /e2e|playwright|cypress|render|screenshot|visual|browser|lighthouse/],
+    ['lint', /lint|clippy|eslint|biome|fmt|format|prettier|ruff|shellcheck/],
+    ['typecheck', /typecheck|type-check|\btsc\b|mypy|pyright/],
+    ['build', /build|compile|bundle/],
   ];
-  const KIND_LABELS = [...CHECK_KINDS.map(([k, l]) => [k, l]), ['review', 'Review'], ['other', 'Other']];
-  const kindColor = k => { const i = KIND_LABELS.findIndex(x => x[0] === k); return k === 'other' ? 'var(--text-muted)' : colorOf(i); };
-  function kindOf(label, command) {
-    const l = String(label || '').toLowerCase();
-    for (const src of [l.replace(/^(review|rev)[-:_]/, ''), String(command || '').toLowerCase()])
-      for (const [k, , re] of CHECK_KINDS) if (re.test(src)) return k;
-    return /review|audit/.test(l) ? 'review' : 'other';
+  const LABEL_TESTISH = /test|suite|\bspec\b|smoke/;
+  // per command segment, after env assignments, `!`, `bash -c` and npx/bunx are peeled off
+  const TEST_RUNNER = /^((cargo|bun|deno|go|npm|pnpm|yarn|nx|make|mix|dotnet|swift|gradle|mvn)\s+(run\s+)?test\b|nx\s+(run-many|affected)\b.*\s-t\s*[\w,:-]*\btest\b|node\s+--test\b|(jest|vitest|pytest|rspec|mocha|phpunit)\b|python3?\s+-m\s+(pytest|unittest)\b|playwright\s+test\b)/;
+  const TEST_SCRIPT = /^((bash|sh|zsh|node|python3?|bun|deno|tsx)\s+)?\.{0,2}\/?([\w.@-]+\/)*(tests?\/[\w.\/@-]+|[\w.-]*\btests?\b[\w.-]*\.(sh|mjs|cjs|js|ts|py))(\s|$)/;
+  const CMD_KIND = [
+    ['e2e', /^(playwright|cypress|lighthouse)\b|\be2e\b/],
+    ['lint', /^((npm|pnpm|yarn|bun|make|nx)\s+(run\s+)?lint\b|cargo\s+(fmt|clippy)\b|(eslint|biome|prettier|ruff|shellcheck|rustfmt|gofmt|golangci-lint|stylelint)\b)/],
+    ['typecheck', /^(tsc\b|mypy\b|pyright\b|cargo\s+check\b|(npm|pnpm|yarn|bun)\s+(run\s+)?typecheck\b|turbo\s+typecheck\b)/],
+    ['build', /^((npm|pnpm|yarn|bun|nx)\s+(run\s+)?build\b|cargo\s+build\b|go\s+build\b|turbo\s+build\b|webpack\b|vite\s+build\b)/],
+  ];
+  // segments made only of these (plus cd/export/env) inspect files or output: they run no tests
+  const INSPECT = new Set(['test', 'grep', 'rg', 'jq', 'git', 'diff', 'cmp', 'ls', 'stat', 'find', 'echo', 'printf', 'cat', 'wc', 'head', 'tail', 'sed', 'awk', 'sort', 'uniq', 'shasum', 'sha256sum', 'xmllint', 'curl', 'for', 'do', 'done', 'if', 'then', 'fi', 'true', 'false', 'exit']);
+  const NEUTRAL = new Set(['cd', 'export', 'env', 'set', 'pushd', 'popd']);
+  function cmdSegments(command) {
+    const c = String(command || '').toLowerCase()
+      .replace(/\[\[[^\]]*\]\]|\[ [^\]]*\]/g, ' ')                       // [ … ] and [[ … ]]
+      .replace(/(^|[\s;&|(!])test\s+(-[a-z]{1,2}|!)\s[^;&|)]*/g, '$1')    // the shell's test builtin: test -f x
+      .replace(/\btest\(/g, '(');                                          // jq's test(…)
+    const peel = x => x.replace(/^[!({\s"']+/, '')
+      .replace(/^(bash|sh|zsh)\s+-c\s+/, '')
+      .replace(/^env\s+/, '')
+      .replace(/^([a-z_][a-z0-9_]*=("[^"]*"|'[^']*'|\S*)\s+)+/, '')
+      .replace(/^(npx|bunx|pnpm\s+exec|pnpm\s+dlx)\s+/, '');
+    return c.split(/&&|\|\||[;|\n]|\$\(|`/).map(x => { let y = x.trim(), z; do { z = y; y = peel(y).trim(); } while (y !== z); return y; }).filter(Boolean);
   }
+  function kindOf(label, command) {
+    const l = String(label || '').toLowerCase().replace(/^(review|rev)[-:_]/, '');
+    for (const [k, re] of LABEL_KIND) if (re.test(l)) return k;
+    const segs = cmdSegments(command);
+    if (segs.some(x => CMD_KIND[0][1].test(x))) return 'e2e';
+    if (segs.some(x => TEST_RUNNER.test(x) || TEST_SCRIPT.test(x))) return 'test';
+    const verbs = segs.map(x => x.split(/\s+/)[0].replace(/^.*\//, '')).filter(v => !NEUTRAL.has(v));
+    const inspectOnly = verbs.length > 0 && verbs.every(v => INSPECT.has(v));
+    if (LABEL_TESTISH.test(l) && !inspectOnly) return 'test';
+    for (const [k, re] of CMD_KIND.slice(1)) if (segs.some(x => re.test(x))) return k;
+    return /review|audit/.test(String(label || '').toLowerCase()) ? 'review' : 'other';
+  }
+  // </check-kinds>
+  const kindColor = k => { const i = KIND_LABELS.findIndex(x => x[0] === k); return k === 'other' ? 'var(--text-muted)' : colorOf(i); };
   // per run: executions per kind; legacy lines only kept the labels that ended passing (count 1 each)
   function runKinds(r) {
     const by = {};
