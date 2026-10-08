@@ -19,7 +19,9 @@
 # tokens; absent on some messages). Context of a request = input + cache write + cache read;
 # first_context_tokens / peak_context_tokens are its first and largest value per agent, and
 # total_tokens adds output (so it inherits the output estimate above). Totals: total_tokens,
-# thinking_ms, effort_mix {level: messages}, model_mix {model: total_tokens}.
+# thinking_ms, peak_context_tokens, effort_mix {level: messages}, model_mix {model: total_tokens}.
+# Orchestrator agents also carry session_started_at and mid_session: the session began more than
+# ROSALBITO_MID_SESSION_MINUTES (15) before the run, so its first context includes earlier work.
 # Fork subagents (agentType "fork") replay their parent's lines with the same uuid (and re-log
 # the fork-point message under a new uuid): each uuid, and each message id, counts once, for the
 # non-fork, shallowest agent that has it.
@@ -27,7 +29,7 @@
 # Prints one JSON object: {sessions, agents:[...], totals}.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-[ "${1:-}" = "--help" ] && { sed -n '2,26p' "$0"; exit 0; }
+[ "${1:-}" = "--help" ] && { sed -n '2,30p' "$0"; exit 0; }
 
 RUN_ID=""; START=""; END=""; SESSIONS=""
 while [ $# -gt 0 ]; do
@@ -53,17 +55,20 @@ files="$(
 )"
 files="$(printf '%s\n' "$files" | sed '/^$/d' | sort -u)"
 
-records="$(mktemp)"; metas="$(mktemp)"; trap 'rm -f "$records" "$metas"' EXIT
+records="$(mktemp)"; metas="$(mktemp)"; firsts="$(mktemp)"; trap 'rm -f "$records" "$metas" "$firsts"' EXIT
 SEL='select(.type=="assistant" and .message.usage != null and .timestamp >= $s and .timestamp <= $e)
   | {sess:$sess, agent:(if .isSidechain == true then (.agentId // "sidechain") else $agent end),
      id:(.message.id // .uuid), ts:.timestamp, model:(.message.model // "unknown"), u:.message.usage,
      final:(.message.stop_reason != null), uuid:.uuid, effort:(.effort // .perTurnEffort), th:(.thinkingDurationMs // 0),
      chars:([.message.content[]? | if .type=="text" then (.text|length) elif .type=="tool_use" then (.input|tostring|length) else 0 end] | add // 0),
      tools:[.message.content[]? | select(.type=="tool_use") | .name]}'
-echo '{}' > "$metas"
+echo '{}' > "$metas"; echo '{}' > "$firsts"
+MID_BEFORE=""; [ -n "$start_e" ] && MID_BEFORE="$(epoch_to_iso $((start_e - ${ROSALBITO_MID_SESSION_MINUTES:-15} * 60)))"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   sid="$(basename "$f" .jsonl)"
+  # when the session began: a run that starts well into it inherits its accumulated context
+  grep -m1 -E '"type":"(user|assistant)"' "$f" | jq -c --arg s "$sid" '{($s): .timestamp}' 2>/dev/null >> "$firsts"
   # grep first: tool-result lines are most of a transcript's bytes and never carry usage
   grep -F '"type":"assistant"' "$f" | jq -c --arg s "$START" --arg e "$END_SLACK" --arg sess "$sid" --arg agent main "$SEL" 2>/dev/null >> "$records"
   for sf in "${f%.jsonl}"/subagents/agent-*.jsonl; do
@@ -76,6 +81,7 @@ while IFS= read -r f; do
 done <<< "$files"
 
 jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas") \
+  --slurpfile firsts <(jq -s 'add' "$firsts") --arg mid_before "$MID_BEFORE" \
   --argjson sessions "$(printf '%s\n' "$files" | sed '/^$/d' | xargs -n1 basename 2>/dev/null | sed 's/\.jsonl$//' | jq -R . | jq -s .)" '
   ($pricing[0].models) as $P | ($metas[0] // {}) as $M |
   def price($m): [$P | to_entries[] | select(.key as $k | $m | startswith($k))] | sort_by(.key|length) | last | .value;
@@ -147,6 +153,9 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
       total_tokens: ($msgs | sumk(.tot)),
       first_context_tokens: ($msgs | min_by(.ts) | .ctx),
       peak_context_tokens: ($msgs | map(.ctx) | max),
+      session_started_at: (if $f.agent == "main" then ($firsts[0][$f.sess] // null) else null end),
+      mid_session: (if $f.agent == "main" and $mid_before != "" and ($firsts[0][$f.sess] // null) != null
+                    then $firsts[0][$f.sess] < $mid_before else null end),
       _model_tokens: ($msgs | group_by(.model) | map({key: .[0].model, value: (map(.tot) | add)}) | from_entries)}
      | .role = role)) as $agents |
   {sessions: $sessions,
@@ -162,6 +171,7 @@ jq -s -c --slurpfile pricing "$PRICING" --slurpfile metas <(jq -s 'add' "$metas"
      cache_read_tokens: ($agents | sumk(.cache_read_tokens)),
      cost_usd: ($agents | sumk(.cost_usd)),
      total_tokens: ($agents | sumk(.total_tokens)),
+     peak_context_tokens: ($agents | map(.peak_context_tokens) | max // null),
      thinking_ms: ($agents | sumk(.thinking_ms)),
      effort_mix: ($agents | map(.effort_messages | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries),
      model_mix: ($agents | map(._model_tokens | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries),
