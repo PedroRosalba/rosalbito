@@ -11,7 +11,7 @@ never merge: the pull request is Pedro's gate. More risk buys more verification,
 interruptions. Installed skills (Matt Pocock's, `/code-review`, `security-review`) are
 primitives you route to; `/rosalbito` stays the only entrypoint.
 
-`SKILL_DIR` = the directory containing this file. Scripts live in `SKILL_DIR/scripts/`.
+`SKILL_DIR` = `${CLAUDE_SKILL_DIR}` — the directory containing this file. Scripts live in `SKILL_DIR/scripts/`.
 Run them with bash from the target repo root. Every script prints `--help`.
 
 ## Where things live (internal, never committed)
