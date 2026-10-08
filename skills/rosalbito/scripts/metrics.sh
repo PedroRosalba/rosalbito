@@ -21,12 +21,17 @@ fi
 RUN_ID="$(state_get run_id)"
 STATUS="$(state_get status)"
 EV="$EVIDENCE_FILE"
-ev_total=0; ev_failed=0; same_max=0; labels_passed="[]"
+ev_total=0; ev_failed=0; same_max=0; labels_passed="[]"; fix_labels="[]"; check_labels="[]"
 if [ -s "$EV" ]; then
   ev_total=$(wc -l < "$EV" | tr -d ' ')
   ev_failed=$(jq -s 'map(select(.exit != 0)) | length' "$EV")
   same_max=$(jq -s 'reduce .[] as $e ({cur:{},max:0}; if $e.exit==0 then .cur[$e.label]=0 else .cur[$e.label]=((.cur[$e.label]//0)+1) | .max=([.max, .cur[$e.label]]|max) end) | .max' "$EV")
   labels_passed=$(jq -sc 'group_by(.label) | map(select(.[-1].exit==0) | .[0].label)' "$EV")
+  # a fix cycle: a label that failed and later passed (group_by is stable: file order is kept)
+  fix_labels=$(jq -sc 'group_by(.label) | map(select(map(.exit) | . as $x
+    | any(range(length); $x[.] != 0 and ($x[. + 1:] | any(. == 0)))) | .[0].label)' "$EV")
+  check_labels=$(jq -sc 'group_by(.label) | map({label: .[0].label, command: (.[0].command // "" | .[0:160]),
+    runs: length, failed: map(select(.exit != 0)) | length, last_exit: .[-1].exit})' "$EV")
 fi
 reviews=$(grep -cE '^- round' "$STATE_FILE" 2>/dev/null || true); reviews="${reviews:-0}"
 rejections=$(grep -ciE '^- round.*(reject|fail|changes requested)' "$STATE_FILE" 2>/dev/null || true); rejections="${rejections:-0}"
@@ -59,11 +64,13 @@ jq -cn --arg run "$RUN_ID" --arg risk "$(state_get risk)" --arg status "$STATUS"
   --argjson blocked_report "$([ -n "$RD" ] && [ -f "$RD/reports/blocked.md" ] && echo true || echo false)" \
   --argjson wall "$wall" --argjson stale "$stale" --argjson usage "$usage" \
   --argjson ev "$ev_total" --argjson evf "$ev_failed" --argjson same "$same_max" --argjson passed "$labels_passed" \
+  --argjson fixl "$fix_labels" --argjson clabels "$check_labels" \
   --argjson rev "$reviews" --argjson rej "$rejections" --argjson dec "$decisions" --argjson open "$open_dec" --argjson tests "$tests_added" \
   '{run_id:$run, repo:$repo, repo_path:$repo_path, task:$task, risk:$risk, status:$status, stale:$stale,
     started_at:$started, finished_at:(if $finished == "" then null else $finished end), updated_at:$updated,
     wall_minutes:$wall, iterations:$it,
     checks_run:$ev, checks_failed:$evf, same_failure_max:$same, checks_passing:$passed,
+    check_labels:$clabels, fix_cycles:($fixl | length), fix_cycle_labels:$fixl,
     review_rounds:$rev, review_rejections:$rej, decisions_recorded:$dec, human_interventions:$open,
     human_level:$human, test_files_touched:$tests, has_report:$report, has_blocked_report:$blocked_report,
     harness_version:(if $harness == "" then null else $harness end), pr:$pr, usage:$usage}'
