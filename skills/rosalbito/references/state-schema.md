@@ -68,3 +68,25 @@ what is verified, what failed, what was decided. Tested by killing a session mid
 ```json
 {"ts":"2026-10-06T23:10:02Z","run_id":"…","iteration":2,"label":"test","command":"cargo test","exit":0,"duration_s":4,"output_tail":"…last 40 lines…"}
 ```
+
+## Index line (`~/.rosalbito/runs.jsonl`)
+
+One JSON object per run: the `metrics.sh` line plus what `collect.sh` adds.
+
+| key | meaning |
+|-----|---------|
+| run_id, repo, repo_path, task, risk, status, stale | identity and outcome (`stale`: open and untouched for 24 h) |
+| started_at, finished_at, updated_at, wall_minutes, iterations | timing |
+| checks_run, checks_failed, same_failure_max, checks_passing | evidence totals; labels whose last result passed |
+| check_labels | `[{label, command (first, 160 chars), runs, failed, last_exit}]` per evidence label |
+| fix_cycles, fix_cycle_labels | labels that failed and later passed in this run (the debug loop) |
+| review_rounds, review_rejections, decisions_recorded, human_interventions, test_files_touched | from state.md, ADRs and the branch diff |
+| usage | `usage.sh` block: `sessions`, `agents[]` (role, models, messages, token kinds, cost, tools, `effort`, `effort_messages`, `thinking_ms`, `total_tokens`, `first_context_tokens`, `peak_context_tokens`), `totals` (the same sums plus `effort_mix`, `model_mix`, `cost_by_role`) |
+| input_size | `{task_chars, first_context_tokens (orchestrator's first request in the run window), diff}` |
+| input_size.diff | `{files, added, removed, base, head, branch, base_branch}`: `base` is the merge-base of the base branch as of `started_at` and the branch as of `finished_at` (tip while open); committed changes only; `null` when the repo, branch or base cannot be resolved |
+| legacy | recovered from an old `metrics.jsonl` whose run directory is gone (no evidence detail) |
+
+Context of one request = input + cache write + cache read tokens; `total_tokens` adds output
+(which for some subagent messages is estimated: `output_estimated_messages`). Effort is the
+`effort` (else `perTurnEffort`) field Claude Code writes on each assistant message; messages
+without one count as `unknown`.
