@@ -258,6 +258,8 @@ const cases = [
   ['hooks-json', `jq -e '.hooks[] | select(.command|test("X"))' hooks/hooks.json`, 'other'],
   ['orch-tiktok', 'bash -c ! grep -rni tiktok src tests README.md', 'other'],
   ['prepush:full-suite', `grep -q '^exit=0' push.log && awk '{print}' push.log`, 'other'],
+  ['prepush:full-suite-2', `grep -E '^ [0-9]+ (pass|fail)' push.log | awk '{s[$2]+=$1} END {print s["pass"]}'`, 'other'],
+  ['quoted-runner', `bash -c 'cd /x && bun test src/'`, 'test'],
   ['grep-tests', 'grep -r foo tests/x.test.ts', 'other'],
   ['if-test', '[ -f a ] && [[ -d b ]] && echo ok', 'other'],
   ['suite', 'bash tests/run.sh', 'test'],
