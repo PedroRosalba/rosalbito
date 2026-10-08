@@ -92,6 +92,7 @@ a { color: var(--accent); }
   padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 10; max-width: 320px; }
 #tip b { font-weight: 600; }
 .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+.notice { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--border, #ccc); border-radius: 8px; color: var(--text-secondary); }
 footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
 h2 .fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border-radius: 4px; }
 h2 .fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -137,6 +138,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
       </select>
     </div>
   </header>
+  <p class="notice" id="indexing" hidden></p>
 
   <section class="tiles" id="tiles"></section>
 
@@ -740,7 +742,7 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
         RAW = next;
         if (changed) { RUNS = RAW.runs || []; fillFilters(); setModelOrder(); render(); }
       } catch (e) { reachable = false; }
-      status();
+      indexing(); status();
     };
     setInterval(poll, 5000);
     setInterval(status, 1000);
@@ -749,8 +751,18 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   function setModelOrder() { modelOrder = uniq(RUNS.flatMap(r => Object.keys((totals(r) && totals(r).model_mix) || {})).filter(m => m !== '<synthetic>')); }
   setModelOrder();
 
+  // An empty index usually means the first scan is still running: say so instead of showing zeros.
+  function indexing() {
+    const el = $('indexing'), empty = !RUNS.length;
+    el.hidden = !empty;
+    if (empty) el.textContent = RAW.live && (RAW.collecting || !RAW.generated_at)
+      ? 'Indexing your repositories… the first scan walks your home directory and can take a minute. This page fills in by itself.'
+      : RAW.live ? 'No Rosalbito runs found yet. Runs appear here as soon as a repository has an .agent/runs directory.'
+      : 'No runs in this snapshot. Run dashboard.sh --serve for live updates.';
+  }
   function render() {
     const runs = filtered();
+    indexing();
     status();
     tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); verification(runs); chartKinds(runs.filter(counted)); tableRoles(runs.filter(counted)); tableRuns(runs); tableTools(runs.filter(counted));
     $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skills/rosalbito/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
