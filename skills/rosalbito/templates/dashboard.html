@@ -496,10 +496,18 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   const diffLines = r => { const d = diffOf(r); return d ? d.added + d.removed : null; };
   const perLine = r => { const t = totalTokens(r), l = diffLines(r); return t != null && l ? t / l : null; };
   const EFFORT_R = { low: 4, medium: 5, high: 6.5, xhigh: 8, max: 9.5 };
+  const midSession = r => !!(r.input_size && r.input_size.first_context_mid_session);
+  const estimated = r => (totals(r) && totals(r).output_estimated_messages) || 0;
+  // a second model carrying at least 5% of the tokens makes a run mixed-model
+  const secondModel = r => { const m = Object.entries((totals(r) && totals(r).model_mix) || {}).filter(([k]) => k !== '<synthetic>').sort((a, b) => b[1] - a[1]);
+    const t = m.reduce((x, [, v]) => x + v, 0); return m.length > 1 && t && m[1][1] / t >= 0.05 ? m[1][0] : null; };
+  const modelMixText = r => { const m = Object.entries((totals(r) && totals(r).model_mix) || {}).filter(([k]) => k !== '<synthetic>').sort((a, b) => b[1] - a[1]);
+    const t = m.reduce((x, [, v]) => x + v, 0); return m.map(([k, v]) => `${shortModel(k)}${m.length > 1 && t ? ' ' + pct(v / t) : ''}`).join(', '); };
+  const BASIS = { 'since run start': 'since its branch at run start', 'vs merge-base': 'against the merge-base with its base', 'since repo creation': 'since the repository was created (by the run)' };
   const X_MEASURES = {
-    diff: { button: 'Diff lines', axis: 'Lines changed by the run: added + removed in its branch diff against the merge-base with its base (committed changes)',
-      get: diffLines, missing: 'no branch diff (branch or repo gone, or a legacy run)' },
-    context: { button: 'First-turn context', axis: "Orchestrator's first-request context at run start, tokens (input + cache write + cache read)",
+    diff: { button: 'Diff lines', axis: 'Lines the run committed: added + removed since its branch at run start (or vs the merge-base; basis in the tooltip)',
+      get: diffLines, missing: 'no measurable diff (branch rewritten or gone, nothing committed inside the run window, or a legacy run)' },
+    context: { button: 'First-turn context', axis: "Orchestrator's first-request context, tokens (input + cache write + cache read); hollow dashed = started mid-session",
       get: r => r.input_size ? r.input_size.first_context_tokens : null, missing: 'no orchestrator transcript' },
     task: { button: 'Task chars', axis: 'Task statement length, characters', get: r => r.input_size ? r.input_size.task_chars : null, missing: 'no task text' },
   };
@@ -539,16 +547,24 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
     const pts = withTok.filter(r => M.get(r) != null);
     const models = uniq(withTok.map(domModel));
     const efforts = Object.keys(EFFORT_R).filter(e => withTok.some(r => domEffort(r) === e));
+    const ring = (stroke, dash) => s('svg', { width: 16, height: 16, 'aria-hidden': 'true' }, s('circle', { cx: 8, cy: 8, r: 6, fill: 'none', stroke, 'stroke-width': 2, 'stroke-dasharray': dash || null }));
     $('legend-tokens').replaceChildren(
+      h('span', { class: 'muted' }, 'colour = dominant model (by tokens):'),
       ...models.map(m => h('span', {}, h('i', { class: 'sw', style: `background:${modelColor(m)}` }), shortModel(m))),
+      withTok.some(secondModel) ? h('span', {}, ring('var(--text-secondary)'), 'outer ring = second model (mixed-model run)') : '',
+      xMeasure === 'context' && pts.some(midSession) ? h('span', {}, ring('var(--text-secondary)', '3 2'), 'hollow dashed = started mid-session') : '',
       efforts.length ? h('span', { class: 'muted' }, 'marker size = dominant effort:') : '',
       ...efforts.map(e => { const r = EFFORT_R[e]; return h('span', {}, s('svg', { width: 2 * r + 2, height: 2 * r + 2, 'aria-hidden': 'true' },
         s('circle', { cx: r + 1, cy: r + 1, r, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 1.5 })), e); }));
     const missing = withTok.length - pts.length, noTok = runs.length - withTok.length;
+    const mid = withTok.filter(midSession).length, est = withTok.filter(estimated).length, shared = withTok.filter(r => r.usage_duplicate_of).length;
     $('note-tokens').textContent = [
       missing ? `${missing} run${missing === 1 ? '' : 's'} not plotted: ${M.missing}.` : '',
       noTok ? `${noTok} run${noTok === 1 ? '' : 's'} without token data (no transcript).` : '',
-      'Effort = the reasoning effort level most of the run’s assistant messages carried (Claude Code’s per-message effort field); the full mix is in the tooltip. Two runs that shared one session window over the same seconds can show the same usage.',
+      'Effort = the reasoning effort level most of the run’s assistant messages carried (Claude Code’s per-message effort field); the full mix is in the tooltip.',
+      mid ? `† ${mid} run${mid === 1 ? '' : 's'} started more than 15 minutes into an existing session: their first-turn context includes that earlier work, so it overstates what the run was handed.` : '',
+      est ? `* ${est} run${est === 1 ? '' : 's'} include subagent messages whose transcript kept only a partial output count; that output is estimated from visible text (hidden thinking not included).` : '',
+      shared ? `${shared} run${shared === 1 ? '' : 's'} marked shared usage ran in the same session window as another run: identical tokens, plotted for both, counted once in totals.` : '',
     ].filter(Boolean).join(' ');
     if (!pts.length) { $('chart-tokens').replaceChildren(h('div', { class: 'empty' }, `No runs with ${M.button.toLowerCase()} and token data in this filter.`)); }
     else {
@@ -562,13 +578,17 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
         s('text', { class: 'axis-title', x: 14, y: T + ph / 2, 'text-anchor': 'middle', transform: `rotate(-90 14 ${T + ph / 2})` }, `Total tokens per run${ys.log ? ' (log)' : ''}`));
       for (const r of [...pts].sort((a, b) => (EFFORT_R[domEffort(b)] || 5) - (EFFORT_R[domEffort(a)] || 5))) {
         const x = L + xs.at(M.get(r)), y = T + ph - ys.at(totalTokens(r)), e = domEffort(r), m = domModel(r), d = diffOf(r);
-        const tipHtml = `<b>${esc(r.repo)}</b> · ${esc(shortTask(r.task || r.run_id, 70))}<br>${esc(shortModel(m))} · effort ${esc(e || 'unknown')} (${mixText(totals(r).effort_mix)} msgs)` +
-          `<br>${tok(totalTokens(r))} tokens · ${usd(cost(r))}<br>${esc(M.button)}: ${tok(M.get(r))}` +
-          (d ? `<br>diff ${d.files} files, +${d.added} −${d.removed}` : '') + `<br><span class="muted">${esc(r.run_id)}</span>`;
+        const m2 = secondModel(r), hollow = !e || (xMeasure === 'context' && midSession(r)), rr = EFFORT_R[e] || 5;
+        const tipHtml = `<b>${esc(r.repo)}</b> · ${esc(shortTask(r.task || r.run_id, 70))}<br>${esc(modelMixText(r))} · effort ${esc(e || 'unknown')} (${mixText(totals(r).effort_mix)} msgs)` +
+          `<br>${tok(totalTokens(r))} tokens${estimated(r) ? ' (output partly estimated)' : ''} · ${usd(cost(r))}<br>${esc(M.button)}: ${tok(M.get(r))}` +
+          (midSession(r) ? '<br>first-turn context: started mid-session' : '') +
+          (d ? `<br>diff ${d.files} files, +${d.added} −${d.removed}, ${esc(BASIS[d.basis] || d.basis || '')}` : '') +
+          (sharedNote(r) ? `<br>${esc(sharedNote(r))}` : '') + `<br><span class="muted">${esc(r.run_id)}</span>`;
         svg.append(s('g', { class: 'pt', tip: tipHtml },
           s('circle', { cx: x, cy: y, r: 12, fill: 'transparent' }),
-          s('circle', { class: 'mark', cx: x, cy: y, r: EFFORT_R[e] || 5, fill: e ? modelColor(m) : 'none', 'fill-opacity': 0.85,
-            stroke: e ? 'var(--surface-1)' : modelColor(m), 'stroke-width': 2 })));
+          m2 ? s('circle', { cx: x, cy: y, r: rr + 3, fill: 'none', stroke: modelColor(m2), 'stroke-width': 2 }) : null,
+          s('circle', { class: 'mark', cx: x, cy: y, r: rr, fill: hollow ? 'none' : modelColor(m), 'fill-opacity': 0.85,
+            stroke: hollow ? modelColor(m) : 'var(--surface-1)', 'stroke-width': 2, 'stroke-dasharray': hollow && e ? '3 2' : null })));
       }
       $('chart-tokens').replaceChildren(svg);
     }
@@ -576,12 +596,14 @@ th[aria-sort="ascending"] button::after { content: " ↑"; }
   }
   const TOKEN_COLS = [
     { key: 'run', label: 'Run', get: r => `${r.repo} · ${r.task || r.run_id}`, show: r => h('span', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 44), ' ', sharedBadge(r)) },
-    { key: 'model', label: 'Model(s)', get: r => domModel(r) || '', show: r => Object.keys(totals(r).model_mix || {}).filter(m => m !== '<synthetic>').map(shortModel).join(', ') || '–' },
+    { key: 'model', label: 'Model(s)', get: r => domModel(r) || '', show: r => modelMixText(r) || '–' },
     { key: 'effort', label: 'Effort', get: r => EFFORT_R[domEffort(r)] || 0, show: r => h('span', { title: Object.entries(totals(r).effort_mix || {}).map(([k, v]) => `${k} ${v}`).join(', ') }, domEffort(r) || 'unknown') },
-    { key: 'total', label: 'Total tokens', num: true, get: totalTokens, show: r => tok(totalTokens(r)) },
-    { key: 'context', label: 'First context', num: true, get: X_MEASURES.context.get, show: r => tok(X_MEASURES.context.get(r)) },
+    { key: 'total', label: 'Total tokens', num: true, get: totalTokens, show: r => estimated(r)
+      ? h('span', { title: `${estimated(r)} subagent messages kept only a partial output count; their output is estimated from visible text` }, tok(totalTokens(r)) + '*') : tok(totalTokens(r)) },
+    { key: 'context', label: 'First context', num: true, get: X_MEASURES.context.get, show: r => midSession(r)
+      ? h('span', { title: 'the run started mid-session: this context includes earlier work in that session' }, tok(X_MEASURES.context.get(r)) + '†') : tok(X_MEASURES.context.get(r)) },
     { key: 'task', label: 'Task chars', num: true, get: X_MEASURES.task.get, show: r => X_MEASURES.task.get(r) ?? '–' },
-    { key: 'diff', label: 'Diff lines', num: true, get: diffLines, show: r => { const d = diffOf(r); return d ? h('span', { title: `${d.files} files, +${d.added} −${d.removed} (${d.branch} vs ${d.base_branch})` }, `${tok(d.added + d.removed)} · ${d.files}f`) : '–'; } },
+    { key: 'diff', label: 'Diff lines', num: true, get: diffLines, show: r => { const d = diffOf(r); return d ? h('span', { title: `${d.files} files, +${d.added} −${d.removed}, ${BASIS[d.basis] || d.basis || ''} (${d.branch}; base ${d.base_branch})` }, `${tok(d.added + d.removed)} · ${d.files}f`) : '–'; } },
     { key: 'perline', label: 'Tokens / line', num: true, get: perLine, show: r => tok(perLine(r) == null ? null : Math.round(perLine(r))) },
     { key: 'cost', label: 'Cost', num: true, get: cost, show: r => usd(cost(r)) },
   ];
