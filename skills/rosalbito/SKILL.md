@@ -1,6 +1,6 @@
 ---
 name: rosalbito
-description: Universal engineering entrypoint. Use for ANY engineering task Pedro hands over — "fix this typo", "add a test", "migrate the payment schema", "refactor X", "implement issue #N", "understand this repo", "grill me about this design", "add telemetry", "open the inbox / what's waiting on me" — whenever the user types /rosalbito or asks for a change that should end up as a verified pull request. Classifies the task by engineering risk and by human-decision dependency, routes it through understand → acceptance → plan → implement → verify → review → PR with deterministic evidence, persistent resumable state in .agent/, hard caps, and a loop driver that keeps working after the session ends. Overhead scales with the task: trivial tasks get near-zero ceremony.
+description: Universal engineering entrypoint. Use for ANY engineering task Pedro hands over — "fix this typo", "add a test", "migrate the payment schema", "refactor X", "implement issue #N", "understand this repo", "grill me about this design", "add telemetry", "open the inbox / what's waiting on me", "patrol <upstream repo / PRs / author>" — whenever the user types /rosalbito or asks for a change that should end up as a verified pull request. Classifies the task by engineering risk and by human-decision dependency, routes it through understand → acceptance → plan → implement → verify → review → PR with deterministic evidence, persistent resumable state in .agent/, hard caps, and a loop driver that keeps working after the session ends. Overhead scales with the task: trivial tasks get near-zero ceremony.
 ---
 
 # /rosalbito — thin orchestrator
@@ -44,6 +44,7 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 | `/rosalbito understand [focus]` | §Understand mode. |
 | `/rosalbito grill [topic]` | §Grill mode. |
 | `/rosalbito inbox [sweep]` | read `references/inbox.md`; run its coordinator (or sweep) protocol in this context. |
+| `/rosalbito patrol [target] [since]` | `oss-detect.sh` (not OSS → say so, stop); read `references/oss.md`; run §patrol. |
 | `/rosalbito <task>` | §1 Classify. |
 | no args, no run | ask for the task in one line; stop. |
 
