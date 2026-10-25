@@ -132,6 +132,9 @@ opts in), push the feature branch, `gh pr create` per the global git rules with
 stay local. Then `finish-run.sh done --pr <url>`, print the completion block
 (`references/reports.md`, including the `Missing capability observed` line), and on its own line
 `<promise>ROSALBITO RUN FINISHED</promise>`. Blocked runs: blocked block + same promise.
+Before the promise, anything only Pedro can release (the PR to review, a `decision` or
+`hard_gate` block, an upstream post or reply) goes into the inbox with `inbox.sh add`
+(`references/inbox.md` §Writing an item), so the session can be closed.
 
 ## Understand mode — `/rosalbito understand [focus]`
 
