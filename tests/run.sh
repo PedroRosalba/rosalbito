@@ -379,6 +379,21 @@ r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" </dev/null)
 check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
 unset ROSALBITO_INBOX
 
+echo "oss-detect"
+O="$S/oss-detect.sh"
+mkdir -p "$TMP/oss/fork" "$TMP/oss/plain" "$TMP/oss/research/sub"
+(cd "$TMP/oss/fork" && git init -q . && git remote add origin https://github.com/someone/turborepo.git && git remote add upstream git@github.com:vercel/turborepo.git)
+(cd "$TMP/oss/plain" && git init -q . && git remote add origin https://github.com/someone/app.git)
+out="$(bash "$O" "$TMP/oss/fork")"; rc=$?
+check "fork with upstream remote is OSS"        '[ $rc -eq 0 ] && echo "$out" | grep >/dev/null "^upstream=vercel/turborepo$" && echo "$out" | grep >/dev/null "^vault_dir=$HOME/Projects/obsidian-vault/turborepo$"'
+check "owner/* pattern matches"                 '(cd "$TMP/oss/plain" && git remote add up2 https://github.com/cloudflare/workerd) && bash "$O" "$TMP/oss/plain" | grep >/dev/null "^upstream=cloudflare/workerd$"'
+(cd "$TMP/oss/plain" && git remote remove up2)
+check "unrelated repo is not OSS"               '[ "$(bash "$O" "$TMP/oss/plain")" = "oss=0" ] && ! bash "$O" "$TMP/oss/plain" >/dev/null'
+mkdir -p .agent/context && printf 'vault: %s\ninbox: oss/inbox\ngit_identity: P <p@x>\nrepos:\n  x/y: z\npaths:\n  %s: research  # a workspace\n' "$TMP/v" "$TMP/oss/research" > .agent/context/oss.yaml
+check "context override + path match (subdir)" 'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^vault_dir=$TMP/v/research$"'
+check "identity mismatch reported"              'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^identity_ok=0$"'
+rm .agent/context/oss.yaml
+
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
