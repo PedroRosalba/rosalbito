@@ -355,6 +355,30 @@ check "allow git push --force-with-lease? no"   'denied "git push --force-with-l
 check "deny git branch -D main"                 'denied "git branch -D main"'
 check "ignores non-Bash tool input"             '[ "$(printf "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"x\"}}" | bash "$HOOK" >/dev/null 2>&1; echo $?)" -eq 0 ]'
 
+echo "inbox"
+export ROSALBITO_INBOX="$TMP/inbox"   # never touch the real vault
+I="$S/inbox.sh"
+prio() { sed -n "s/^priority: //p" "$ROSALBITO_INBOX/$1.md"; }
+check "empty inbox lists cleanly"               'bash "$I" list | grep >/dev/null "inbox empty"'
+check "add rejects unknown kind"                '! bash "$I" add --kind nope --title x >/dev/null 2>&1'
+check "add rejects bad priority"                '! bash "$I" add --kind read --title x --priority P9 >/dev/null 2>&1'
+r1=$(echo "read me" | bash "$I" add --kind read --title "Ecosystem note")
+r2=$(echo "ship it" | bash "$I" add --kind ship-pr --title "Undraft #1" --link https://x/pull/1)
+r3=$(echo "reply" | bash "$I" add --kind review-comment --title "Reply on #2" --link https://x/pull/2)
+r4=$(echo "hot" | bash "$I" add --kind read --title "Red CI" --priority P0)
+check "default priorities by kind"              '[ "$(prio "$r1")$(prio "$r2")$(prio "$r3")" = "P3P1P1" ]'
+check "list orders P0, comment, ship, read"     '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r4 $r3 $r2 $r1 " ]'
+r2b=$(echo "new body" | bash "$I" add --kind ship-pr --title "Undraft #1 (v2)" --link https://x/pull/1 --priority P0)
+check "same open link updates, no duplicate"    '[ "$r2b" = "$r2" ] && [ "$(ls "$ROSALBITO_INBOX" | wc -l | tr -d " ")" -eq 4 ] && grep >/dev/null "new body" "$ROSALBITO_INBOX/$r2.md"'
+check "raised priority reorders by kind"        '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r2 $r4 $r3 $r1 " ]'
+bash "$I" set "$r3" status done
+check "done items leave the open list"          '! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$r3$" && bash "$I" list --all --tsv | cut -f2 | grep >/dev/null "^$r3$"'
+check "frontmatter intact after set"            '[ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r3.md")" -eq 2 ]'
+check "set on unknown id fails"                 '! bash "$I" set nope status done >/dev/null 2>&1'
+r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" </dev/null)
+check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
+unset ROSALBITO_INBOX
+
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
