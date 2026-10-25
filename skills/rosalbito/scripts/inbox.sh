@@ -21,6 +21,11 @@ cmd="${1:-list}"; shift || true
 [ "$cmd" = "--help" ] && { sed -n '2,13p' "$0"; exit 0; }
 [ "$cmd" = "path" ] && { echo "$INBOX_DIR"; exit 0; }
 
+# frontmatter value verbatim: unlike yaml_scalar, keeps '#' (titles say "#8484") and unescapes \"
+field() {
+  sed -n "s/^$2:[[:space:]]*//p" "$1" | head -1 | sed -e 's/^"\(.*\)"$/\1/' -e 's/\\"/"/g'
+}
+
 item_file() { local f="$INBOX_DIR/$1.md"; [ -f "$f" ] || die "no inbox item '$1' in $INBOX_DIR"; echo "$f"; }
 
 # set a frontmatter scalar in an item (same approach as state.sh)
@@ -71,7 +76,7 @@ case "$cmd" in
     if [ -n "$link" ]; then
       for f in "$INBOX_DIR"/*.md; do
         [ -f "$f" ] || continue
-        [ "$(yaml_scalar "$f" link)" = "$link" ] && [ "$(yaml_scalar "$f" status)" = "open" ] || continue
+        [ "$(field "$f" link)" = "$link" ] && [ "$(yaml_scalar "$f" status)" = "open" ] || continue
         set_key "$f" title "$title"; set_key "$f" priority "$prio"; set_key "$f" waiting "$waiting"
         set_key "$f" updated "$(now_iso)"
         [ -n "$body" ] && printf '\n## Update %s\n\n%s\n' "$(now_iso)" "$body" >> "$f"
@@ -112,7 +117,7 @@ case "$cmd" in
       k=$(yaml_scalar "$f" kind)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$(yaml_scalar "$f" priority)" "$(kind_rank "$k")" "$(yaml_scalar "$f" created)" \
-        "$(basename "$f" .md)" "$k" "$st" "$(yaml_scalar "$f" waiting)" "$(yaml_scalar "$f" title)" "$(yaml_scalar "$f" link)"
+        "$(basename "$f" .md)" "$k" "$st" "$(yaml_scalar "$f" waiting)" "$(field "$f" title)" "$(field "$f" link)"
     done | sort -t$'\t' -k1,1 -k2,2n -k3,3)
     [ -n "$rows" ] || { [ $tsv -eq 1 ] || echo "inbox empty ($INBOX_DIR)"; exit 0; }
     if [ $tsv -eq 1 ]; then

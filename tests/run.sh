@@ -374,6 +374,9 @@ check "raised priority reorders by kind"        '[ "$(bash "$I" list --tsv | cut
 bash "$I" set "$r3" status done
 check "done items leave the open list"          '! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$r3$" && bash "$I" list --all --tsv | cut -f2 | grep >/dev/null "^$r3$"'
 check "frontmatter intact after set"            '[ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r3.md")" -eq 2 ]'
+r6=$(bash "$I" add --kind read --title "Comment on emscripten #27831: \"leak\"" </dev/null)
+check "titles keep '#' and unescaped quotes"    'bash "$I" list --tsv | grep >/dev/null "	Comment on emscripten #27831: \"leak\"	"'
+bash "$I" set "$r6" status done
 check "set on unknown id fails"                 '! bash "$I" set nope status done >/dev/null 2>&1'
 r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" </dev/null)
 check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
