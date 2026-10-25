@@ -51,7 +51,9 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 ## 1. Classify (two independent axes)
 
 Read `references/routing.md` once per run. Read `.agent/context/` (understanding, invariants,
-adr) if present — it is prior knowledge, use it. Decide:
+adr) if present — it is prior knowledge, use it. Run `oss-detect.sh`: exit 0 means an
+upstream repo Pedro contributes to — read `references/oss.md`; its delivery (inbox, not PR),
+vault and identity rules override §3 for the whole run. Decide:
 
 1. **Risk tier** `TRIVIAL | LOW | MEDIUM | HIGH | CRITICAL` from scope, uncertainty,
    security/data-integrity/production/financial relevance, reversibility, concurrency, DB.
