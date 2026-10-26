@@ -359,16 +359,18 @@ echo "inbox"
 export ROSALBITO_INBOX="$TMP/inbox"   # never touch the real vault
 I="$S/inbox.sh"
 prio() { sed -n "s/^priority: //p" "$ROSALBITO_INBOX/$1.md"; }
+pw() { printf "## In plain words\n- %s\n" "$1"; }   # every new item needs this section
 check "empty inbox lists cleanly"               'bash "$I" list | grep >/dev/null "inbox empty"'
 check "add rejects unknown kind"                '! bash "$I" add --kind nope --title x >/dev/null 2>&1'
+check "add refuses a body without plain words" '! echo "jargon only" | bash "$I" add --kind read --title x >/dev/null 2>&1 && ! bash "$I" add --kind read --title x </dev/null >/dev/null 2>&1'
 check "add rejects bad priority"                '! bash "$I" add --kind read --title x --priority P9 >/dev/null 2>&1'
-r1=$(echo "read me" | bash "$I" add --kind read --title "Ecosystem note")
-r2=$(echo "ship it" | bash "$I" add --kind ship-pr --title "Undraft #1" --link https://x/pull/1)
-r3=$(echo "reply" | bash "$I" add --kind review-comment --title "Reply on #2" --link https://x/pull/2)
-r4=$(echo "hot" | bash "$I" add --kind read --title "Red CI" --priority P0)
+r1=$(pw "read me" | bash "$I" add --kind read --title "Ecosystem note")
+r2=$(pw "ship it" | bash "$I" add --kind ship-pr --title "Undraft #1" --link https://x/pull/1)
+r3=$(pw "reply" | bash "$I" add --kind review-comment --title "Reply on #2" --link https://x/pull/2)
+r4=$(pw "hot" | bash "$I" add --kind read --title "Red CI" --priority P0)
 check "default priorities by kind"              '[ "$(prio "$r1")$(prio "$r2")$(prio "$r3")" = "P3P1P1" ]'
 check "list orders P0, comment, ship, read"     '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r4 $r3 $r2 $r1 " ]'
-r2b=$(echo "new body" | bash "$I" add --kind ship-pr --title "Undraft #1 (v2)" --link https://x/pull/1 --priority P0)
+r2b=$(pw "new body" | bash "$I" add --kind ship-pr --title "Undraft #1 (v2)" --link https://x/pull/1 --priority P0)
 check "same open link updates, no duplicate"    '[ "$r2b" = "$r2" ] && [ "$(ls "$ROSALBITO_INBOX" | wc -l | tr -d " ")" -eq 4 ] && grep >/dev/null "new body" "$ROSALBITO_INBOX/$r2.md"'
 check "raised priority reorders by kind"        '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r2 $r4 $r3 $r1 " ]'
 bash "$I" close "$r3" dropped
@@ -376,11 +378,11 @@ check "closed items move to archive"            '! bash "$I" list --tsv | cut -f
 check "dropped outcome recorded"                'grep >/dev/null "^status: dropped$" "$TMP/archive/$r3.md" && grep >/dev/null "^outcome: dropped$" "$TMP/archive/$r3.md"'
 check "frontmatter intact after close"          '[ "$(grep -c "^---$" "$TMP/archive/$r3.md")" -eq 2 ]'
 check "set finds items in any folder"           'bash "$I" set "$r3" note x && grep >/dev/null "^note: x$" "$TMP/archive/$r3.md"'
-r6=$(bash "$I" add --kind read --title "Comment on emscripten #27831: \"leak\"" </dev/null)
+r6=$(bash "$I" add --kind read --title "Comment on emscripten #27831: \"leak\"" < <(pw x))
 check "titles keep '#' and unescaped quotes"    'bash "$I" list --tsv | grep >/dev/null "	Comment on emscripten #27831: \"leak\"	"'
 bash "$I" close "$r6" read
 check "set on unknown id fails"                 '! bash "$I" set nope status done >/dev/null 2>&1'
-r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" </dev/null)
+r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" < <(pw x))
 check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
 
 echo "inbox: posted / outbox / refresh (fake gh)"
@@ -404,12 +406,13 @@ fx repos/me/x/issues/7/comments '[{"created_at":"2000-01-01T00:00:00Z","user":{"
 fx repos/up/y/issues/9 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"guy"}}'
 fx repos/up/y/issues/9/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"v1","body":"to guy"},
   {"created_at":"2999-01-01T00:00:01Z","user":{"login":"dark"},"html_url":"v2","body":"@pedro could you rebase?"}]'
-p1=$(bash "$I" add --kind ship-pr --title "Fix thing" </dev/null)
+p1=$(bash "$I" add --kind ship-pr --title "Fix thing" < <(pw x))
 G posted "$p1" https://github.com/me/x/pull/7 "https://github.com/up/y/pull/9#issuecomment-1"
 check "posted moves to outbox"                  '[ -f "$TMP/outbox/$p1.md" ] && [ ! -f "$ROSALBITO_INBOX/$p1.md" ] && bash "$I" list --outbox --tsv | cut -f2 | grep >/dev/null "^$p1$"'
 check "watch = thread urls, fragment stripped"  'grep >/dev/null "^watch: https://github.com/me/x/pull/7 https://github.com/up/y/pull/9$" "$TMP/outbox/$p1.md"'
 G refresh >/dev/null
 check "reply on our PR -> review-comment item"  'grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: review-comment$"'
+check "refresh items carry plain words"      'grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^## In plain words"'
 check "reply lists guy, not us, bots or old"    'f=$(grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md); grep >/dev/null "@guy: u1" "$f" && ! grep >/dev/null "u0\|u2\|u3" "$f"'
 check "mention on their thread -> inbox item"   'grep -l "^link: https://github.com/up/y/pull/9$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: v2"'
 check "other chatter is activity, not an item"  'grep >/dev/null "^activity: 1 new comment" "$TMP/outbox/$p1.md" && ! grep -rl "v1" "$ROSALBITO_INBOX" >/dev/null'
@@ -420,9 +423,9 @@ check "second refresh does not duplicate"       '[ "$(ls "$ROSALBITO_INBOX" | wc
 fx repos/me/x/issues/7 '{"state":"closed","pull_request":{"merged_at":"2026-10-26T00:00:00Z"},"user":{"login":"pedro"}}'
 G refresh >/dev/null
 check "merged PR archives the outbox item"      '[ -f "$TMP/archive/$p1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$p1.md"'
-old=$(bash "$I" add --kind read --title "Old note" </dev/null); sed -i.bak "s/^created: .*/created: 2000-01-01T00:00:00Z/" "$ROSALBITO_INBOX/$old.md" && rm "$ROSALBITO_INBOX/$old.md.bak"
+old=$(bash "$I" add --kind read --title "Old note" < <(pw x)); sed -i.bak "s/^created: .*/created: 2000-01-01T00:00:00Z/" "$ROSALBITO_INBOX/$old.md" && rm "$ROSALBITO_INBOX/$old.md.bak"
 fx repos/up/z/issues/3 '{"state":"closed","pull_request":null,"user":{"login":"x"}}'
-gone=$(bash "$I" add --kind review-comment --title "Answer z" --link https://github.com/up/z/issues/3 </dev/null)
+gone=$(bash "$I" add --kind review-comment --title "Answer z" --link https://github.com/up/z/issues/3 < <(pw x))
 G refresh --dry-run >/dev/null
 check "dry run changes nothing"                 '[ -f "$ROSALBITO_INBOX/$old.md" ] && [ -f "$ROSALBITO_INBOX/$gone.md" ]'
 G refresh >/dev/null
