@@ -106,6 +106,10 @@ case "$cmd" in
       done
     fi
 
+    # every new item explains itself to a non-expert first (references/inbox.md §In plain words)
+    printf '%s\n' "$body" | grep -q '^## In plain words' \
+      || die "add: body must start with an '## In plain words' section (see references/inbox.md)"
+
     slug=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-50 | sed 's/-$//')
     id="$(date -u +%Y%m%d)-$slug"; n=2
     while [ -e "$INBOX_DIR/$id.md" ] || [ -e "$OUTBOX_DIR/$id.md" ] || [ -e "$ARCHIVE_DIR/$id.md" ]; do
@@ -220,8 +224,8 @@ case "$cmd" in
           others=$((others + other))
           if [ -n "$to_us" ]; then
             say "reply   $or#$n: $(printf '%s\n' "$to_us" | grep -c .) new for us -> inbox"
-            [ $dry -eq 1 ] || printf 'New replies on %s#%s since %s (we posted: %s):\n\n%s\n\nRead the thread, draft the exact reply, then present it.\n' \
-              "$or" "$n" "$since" "$title" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" \
+            [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** someone answered on %s#%s, where we posted "%s".\n- **What you'"'"'re deciding:** whether and how to reply. The coordinator reads the thread and drafts the exact reply first.\n\nNew replies since %s:\n\n%s\n' \
+              "$or" "$n" "$title" "$since" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" \
               | bash "$0" add --kind review-comment --priority P1 --repo "$or" --link "$w" --source "$f" \
                   --title "Reply on $or#$n (re: $title)" >/dev/null
           fi
