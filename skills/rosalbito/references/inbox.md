@@ -23,6 +23,22 @@ Three sibling folders of markdown files, one file per item (default under
 | `decide` | pick between options | the question, 2–4 options, the recommendation and why |
 | `read` | read a finding or vault update | 3–5 line summary, why it matters for the work, the file to open |
 
+### In plain words (required, first thing in every body)
+
+Pedro reviews many items in one sitting, cold. Each body starts with this section;
+`inbox.sh add` refuses a new item without it. Under ~170 words, jargon explained in
+parentheses the first time, overlaps with other items named.
+
+```markdown
+## In plain words
+- **What's going on:** 1–3 sentences a non-specialist follows.
+- **What gets affected:** who or what breaks or benefits, how badly (crash, slow leak, wrong data, cosmetic), at what scale.
+- **What you're deciding:** what "ok" triggers concretely (public comment on X, new PR, teardown, nothing public). For `read`: the takeaway.
+- **If we do it:** what it means for the project's scope: follow-up work, commitments, maintainer relationship.
+- **If we don't:** what happens; does waiting cost anything.
+- **Risk:** what could go wrong by doing it.
+```
+
 Pedro reads the final text of every upstream post before it goes out. A `review-comment` or
 `ship-pr` item without the exact text is incomplete: write the text, then add the item.
 
@@ -71,8 +87,8 @@ Runs in **this** context (Pedro is interacting). Read-only until Pedro approves 
    addressed to Pedro that have no inbox item become `review-comment` items (draft the
    reply text first).
 3. **Present.** One line of totals (`3 to ship · 2 comments · 1 decision · 4 reads · 5
-   in outbox`), what `refresh` archived or raised, then the inbox queue in order. Per item: priority, kind, title, link, one
-   sentence of what is needed, and the full text to approve for `review-comment`/`ship-pr`.
+   in outbox`), what `refresh` archived or raised, then the inbox queue in order. Per item: priority, kind, title, link, its
+   **In plain words** section, then the full text to approve for `review-comment`/`ship-pr`.
    Present at most 5 actionable items, then offer more.
 4. **Act on Pedro's answer, item by item.** "ok"/"ship" on an item → re-check the target
    didn't move (branch heads, thread state), perform exactly that action with exactly that
