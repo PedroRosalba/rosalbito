@@ -371,16 +371,64 @@ check "list orders P0, comment, ship, read"     '[ "$(bash "$I" list --tsv | cut
 r2b=$(echo "new body" | bash "$I" add --kind ship-pr --title "Undraft #1 (v2)" --link https://x/pull/1 --priority P0)
 check "same open link updates, no duplicate"    '[ "$r2b" = "$r2" ] && [ "$(ls "$ROSALBITO_INBOX" | wc -l | tr -d " ")" -eq 4 ] && grep >/dev/null "new body" "$ROSALBITO_INBOX/$r2.md"'
 check "raised priority reorders by kind"        '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r2 $r4 $r3 $r1 " ]'
-bash "$I" set "$r3" status done
-check "done items leave the open list"          '! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$r3$" && bash "$I" list --all --tsv | cut -f2 | grep >/dev/null "^$r3$"'
-check "frontmatter intact after set"            '[ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r3.md")" -eq 2 ]'
+bash "$I" close "$r3" dropped
+check "closed items move to archive"            '! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$r3$" && bash "$I" list --archive --tsv | cut -f2 | grep >/dev/null "^$r3$" && [ -f "$TMP/archive/$r3.md" ]'
+check "dropped outcome recorded"                'grep >/dev/null "^status: dropped$" "$TMP/archive/$r3.md" && grep >/dev/null "^outcome: dropped$" "$TMP/archive/$r3.md"'
+check "frontmatter intact after close"          '[ "$(grep -c "^---$" "$TMP/archive/$r3.md")" -eq 2 ]'
+check "set finds items in any folder"           'bash "$I" set "$r3" note x && grep >/dev/null "^note: x$" "$TMP/archive/$r3.md"'
 r6=$(bash "$I" add --kind read --title "Comment on emscripten #27831: \"leak\"" </dev/null)
 check "titles keep '#' and unescaped quotes"    'bash "$I" list --tsv | grep >/dev/null "	Comment on emscripten #27831: \"leak\"	"'
-bash "$I" set "$r6" status done
+bash "$I" close "$r6" read
 check "set on unknown id fails"                 '! bash "$I" set nope status done >/dev/null 2>&1'
 r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" </dev/null)
 check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
-unset ROSALBITO_INBOX
+
+echo "inbox: posted / outbox / refresh (fake gh)"
+GHFIX="$TMP/ghfix"; mkdir -p "$GHFIX" "$TMP/fakebin"; export GHFIX
+cat > "$TMP/fakebin/gh" <<'EOF'
+#!/usr/bin/env bash
+# fake gh: `gh api [--paginate] <path> --jq <expr>` answered from $GHFIX/<path with / as _>.json
+p="" q="."
+while [ $# -gt 0 ]; do case "$1" in api|--paginate) shift ;; --jq) q="$2"; shift 2 ;; *) p="$1"; shift ;; esac; done
+f="$GHFIX/$(printf '%s' "$p" | tr / _).json"
+if [ -f "$f" ]; then jq -r "$q" "$f"; elif [[ "$p" == */comments || "$p" == */reviews ]]; then jq -r "$q" <<<'[]'; else exit 1; fi
+EOF
+chmod +x "$TMP/fakebin/gh"
+G() { PATH="$TMP/fakebin:$PATH" ROSALBITO_GH_LOGIN=pedro bash "$I" "$@"; }
+fx() { printf '%s' "$2" > "$GHFIX/$(printf '%s' "$1" | tr / _).json"; }
+fx repos/me/x/issues/7 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"pedro"}}'
+fx repos/me/x/issues/7/comments '[{"created_at":"2000-01-01T00:00:00Z","user":{"login":"guy"},"html_url":"u0","body":"old"},
+  {"created_at":"2999-01-01T00:00:00Z","user":{"login":"guy"},"html_url":"u1","body":"looks good, one nit"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"pedro"},"html_url":"u2","body":"mine"},
+  {"created_at":"2999-01-01T00:00:02Z","user":{"login":"ci[bot]"},"html_url":"u3","body":"green"}]'
+fx repos/up/y/issues/9 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"guy"}}'
+fx repos/up/y/issues/9/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"v1","body":"to guy"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"dark"},"html_url":"v2","body":"@pedro could you rebase?"}]'
+p1=$(bash "$I" add --kind ship-pr --title "Fix thing" </dev/null)
+G posted "$p1" https://github.com/me/x/pull/7 "https://github.com/up/y/pull/9#issuecomment-1"
+check "posted moves to outbox"                  '[ -f "$TMP/outbox/$p1.md" ] && [ ! -f "$ROSALBITO_INBOX/$p1.md" ] && bash "$I" list --outbox --tsv | cut -f2 | grep >/dev/null "^$p1$"'
+check "watch = thread urls, fragment stripped"  'grep >/dev/null "^watch: https://github.com/me/x/pull/7 https://github.com/up/y/pull/9$" "$TMP/outbox/$p1.md"'
+G refresh >/dev/null
+check "reply on our PR -> review-comment item"  'grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: review-comment$"'
+check "reply lists guy, not us, bots or old"    'f=$(grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md); grep >/dev/null "@guy: u1" "$f" && ! grep >/dev/null "u0\|u2\|u3" "$f"'
+check "mention on their thread -> inbox item"   'grep -l "^link: https://github.com/up/y/pull/9$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: v2"'
+check "other chatter is activity, not an item"  'grep >/dev/null "^activity: 1 new comment" "$TMP/outbox/$p1.md" && ! grep -rl "v1" "$ROSALBITO_INBOX" >/dev/null'
+check "open PR stays in outbox"                 '[ -f "$TMP/outbox/$p1.md" ]'
+n_before=$(ls "$ROSALBITO_INBOX" | wc -l)
+G refresh >/dev/null
+check "second refresh does not duplicate"       '[ "$(ls "$ROSALBITO_INBOX" | wc -l)" -eq "$n_before" ]'
+fx repos/me/x/issues/7 '{"state":"closed","pull_request":{"merged_at":"2026-10-26T00:00:00Z"},"user":{"login":"pedro"}}'
+G refresh >/dev/null
+check "merged PR archives the outbox item"      '[ -f "$TMP/archive/$p1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$p1.md"'
+old=$(bash "$I" add --kind read --title "Old note" </dev/null); sed -i.bak "s/^created: .*/created: 2000-01-01T00:00:00Z/" "$ROSALBITO_INBOX/$old.md" && rm "$ROSALBITO_INBOX/$old.md.bak"
+fx repos/up/z/issues/3 '{"state":"closed","pull_request":null,"user":{"login":"x"}}'
+gone=$(bash "$I" add --kind review-comment --title "Answer z" --link https://github.com/up/z/issues/3 </dev/null)
+G refresh --dry-run >/dev/null
+check "dry run changes nothing"                 '[ -f "$ROSALBITO_INBOX/$old.md" ] && [ -f "$ROSALBITO_INBOX/$gone.md" ]'
+G refresh >/dev/null
+check "old reads expire to archive"             'grep >/dev/null "^outcome: expired$" "$TMP/archive/$old.md"'
+check "closed upstream thread closes inbox item" 'grep >/dev/null "^outcome: upstream-closed$" "$TMP/archive/$gone.md"'
+unset ROSALBITO_INBOX GHFIX
 
 echo "oss-detect"
 O="$S/oss-detect.sh"
