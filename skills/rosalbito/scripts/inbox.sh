@@ -4,7 +4,10 @@
 #   inbox.sh add --kind <k> --title "<t>" [--link <url>] [--repo <owner/name>]
 #                [--priority P0..P3] [--source <path>] [--session <name>]
 #                                          body (what Pedro must do) from stdin
-#   inbox.sh list [--outbox|--archive|--all] [--tsv]
+#   inbox.sh watch [<id> | --title "<t>" [--repo r] [--source p]] <url>...
+#                                          follow someone else's PR/issue instead of competing:
+#                                          archived when it closes, an @mention -> inbox
+#   inbox.sh list [--outbox|--watch|--archive|--all] [--tsv]
 #                                          default: inbox (waiting on Pedro), by priority
 #   inbox.sh posted <id> <url>...          posted upstream: move to outbox, watch the threads
 #   inbox.sh close <id> <outcome>          finished: move to archive (outcome e.g. merged,
@@ -14,19 +17,20 @@
 #   inbox.sh set <id> <key> <value> | show <id> | path
 #
 # Folders (siblings): inbox/ waiting on Pedro · outbox/ posted, waiting on upstream ·
-# archive/ finished. kinds: review-comment | ship-pr | decide | read. An inbox item with the
+# watch/ others' threads we follow · archive/ finished. kinds: review-comment | ship-pr | decide | read. An inbox item with the
 # same --link is updated in place. ROSALBITO_INBOX overrides the inbox directory.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 INBOX_DIR="${ROSALBITO_INBOX:-$HOME/Projects/obsidian-vault/oss/inbox}"
 OUTBOX_DIR="$(dirname "$INBOX_DIR")/outbox"
+WATCH_DIR="$(dirname "$INBOX_DIR")/watch"
 ARCHIVE_DIR="$(dirname "$INBOX_DIR")/archive"
 KINDS="review-comment ship-pr decide read"
 READ_TTL_DAYS="${ROSALBITO_READ_TTL_DAYS:-14}"
 
 cmd="${1:-list}"; shift || true
-[ "$cmd" = "--help" ] && { sed -n '2,19p' "$0"; exit 0; }
+[ "$cmd" = "--help" ] && { sed -n '2,22p' "$0"; exit 0; }
 [ "$cmd" = "path" ] && { echo "$INBOX_DIR"; exit 0; }
 
 # frontmatter value verbatim: unlike yaml_scalar, keeps '#' (titles say "#8484") and unescapes \"
@@ -36,8 +40,8 @@ field() {
 
 item_file() {
   local d
-  for d in "$INBOX_DIR" "$OUTBOX_DIR" "$ARCHIVE_DIR"; do [ -f "$d/$1.md" ] && { echo "$d/$1.md"; return; }; done
-  die "no item '$1' in $INBOX_DIR, $OUTBOX_DIR or $ARCHIVE_DIR"
+  for d in "$INBOX_DIR" "$OUTBOX_DIR" "$WATCH_DIR" "$ARCHIVE_DIR"; do [ -f "$d/$1.md" ] && { echo "$d/$1.md"; return; }; done
+  die "no item '$1' in $INBOX_DIR, $OUTBOX_DIR, $WATCH_DIR or $ARCHIVE_DIR"
 }
 
 # set a frontmatter scalar in an item (same approach as state.sh)
@@ -71,6 +75,17 @@ kind_rank() {  # tie-break inside a priority: someone waiting on a reply beats o
 
 # https://github.com/o/r/pull/12#x -> "o/r 12" (issues too); nothing for other urls
 thread_of() { printf '%s\n' "$1" | sed -En 's#^https://github\.com/([^/]+/[^/]+)/(pull|issues)/([0-9]+).*#\1 \3#p'; }
+
+# urls -> deduplicated thread urls, fragments stripped (non-GitHub urls dropped)
+watch_urls() {
+  local u t w watch=""
+  for u in "$@"; do
+    t=$(thread_of "$u"); [ -n "$t" ] || continue
+    w="https://github.com/${t% *}/$(case "$u" in */pull/*) echo pull ;; *) echo issues ;; esac)/${t#* }"
+    case " $watch " in *" $w "*) ;; *) watch="${watch:+$watch }$w" ;; esac
+  done
+  echo "$watch"
+}
 
 case "$cmd" in
   add)
@@ -112,7 +127,7 @@ case "$cmd" in
 
     slug=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-50 | sed 's/-$//')
     id="$(date -u +%Y%m%d)-$slug"; n=2
-    while [ -e "$INBOX_DIR/$id.md" ] || [ -e "$OUTBOX_DIR/$id.md" ] || [ -e "$ARCHIVE_DIR/$id.md" ]; do
+    while [ -e "$INBOX_DIR/$id.md" ] || [ -e "$OUTBOX_DIR/$id.md" ] || [ -e "$WATCH_DIR/$id.md" ] || [ -e "$ARCHIVE_DIR/$id.md" ]; do
       id="$(date -u +%Y%m%d)-$slug-$n"; n=$((n+1))
     done
     {
@@ -139,8 +154,9 @@ case "$cmd" in
     for a in "$@"; do
       case "$a" in
         --outbox) dirs="$OUTBOX_DIR" label="outbox" ;;
+        --watch) dirs="$WATCH_DIR" label="watch" ;;
         --archive) dirs="$ARCHIVE_DIR" label="archive" ;;
-        --all) dirs="$INBOX_DIR $OUTBOX_DIR $ARCHIVE_DIR" label="all" ;;
+        --all) dirs="$INBOX_DIR $OUTBOX_DIR $WATCH_DIR $ARCHIVE_DIR" label="all" ;;
         --tsv) tsv=1 ;;
         *) die "list: unknown flag $a" ;;
       esac
@@ -164,15 +180,62 @@ case "$cmd" in
   posted)
     [ $# -ge 2 ] || die "usage: inbox.sh posted <id> <url>..."
     f=$(item_file "$1"); shift
-    watch=""
-    for u in "$@"; do
-      t=$(thread_of "$u"); [ -n "$t" ] || continue
-      w="https://github.com/${t% *}/$(case "$u" in */pull/*) echo pull ;; *) echo issues ;; esac)/${t#* }"
-      case " $watch " in *" $w "*) ;; *) watch="${watch:+$watch }$w" ;; esac
-    done
-    set_key "$f" status posted; set_key "$f" posted "$*"; set_key "$f" watch "$watch"
+    set_key "$f" status posted; set_key "$f" posted "$*"; set_key "$f" watch "$(watch_urls "$@")"
     set_key "$f" last_seen "$(now_iso)"; set_key "$f" updated "$(now_iso)"
     move_to "$f" "$OUTBOX_DIR"
+    ;;
+
+  watch)
+    title="" repo="" src="" session="${CLAUDE_SESSION_NAME:-}" f=""
+    case "${1:-}" in ""|--*|http*) ;; *) f=$(item_file "$1"); shift ;; esac
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --title) title="$2"; shift 2 ;;
+        --repo) repo="$2"; shift 2 ;;
+        --source) src="$2"; shift 2 ;;
+        --session) session="$2"; shift 2 ;;
+        --*) die "watch: unknown flag $1" ;;
+        *) break ;;
+      esac
+    done
+    watch=$(watch_urls "$@")
+    [ -n "$watch" ] || die "usage: inbox.sh watch [<id> | --title <t>] <github pr/issue url>..."
+    if [ -z "$f" ]; then
+      [ -n "$title" ] || die "watch: --title is required for a new watch"
+      body=""; [ -t 0 ] || body="$(cat)"
+      mkdir -p "$WATCH_DIR"
+      for g in "$WATCH_DIR"/*.md; do  # already watching that thread -> refresh the title
+        [ -f "$g" ] || continue
+        [ "$(field "$g" link)" = "${watch%% *}" ] || continue
+        set_key "$g" title "$title"; set_key "$g" updated "$(now_iso)"; basename "$g" .md; exit 0
+      done
+      slug=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//' | cut -c1-50 | sed 's/-$//')
+      id="$(date -u +%Y%m%d)-$slug"; n=2
+      while [ -e "$INBOX_DIR/$id.md" ] || [ -e "$OUTBOX_DIR/$id.md" ] || [ -e "$WATCH_DIR/$id.md" ] || [ -e "$ARCHIVE_DIR/$id.md" ]; do
+        id="$(date -u +%Y%m%d)-$slug-$n"; n=$((n+1))
+      done
+      f="$WATCH_DIR/$id.md"
+      {
+        echo "---"
+        echo "kind: watch"
+        echo "status: watching"
+        echo "priority: P3"
+        echo "title: \"$(printf '%s' "$title" | sed 's/"/\\"/g')\""
+        echo "repo: $repo"
+        echo "link: ${watch%% *}"
+        echo "source: $src"
+        echo "session: $session"
+        echo "created: $(now_iso)"
+        echo "updated: $(now_iso)"
+        echo "---"
+        echo
+        [ -n "$body" ] && echo "$body"
+      } > "$f"
+    fi
+    set_key "$f" status watching; set_key "$f" watch "$watch"
+    set_key "$f" last_seen "$(now_iso)"; set_key "$f" updated "$(now_iso)"
+    move_to "$f" "$WATCH_DIR"
+    basename "$f" .md
     ;;
 
   close)
@@ -202,10 +265,11 @@ case "$cmd" in
       esac
     done
 
-    # outbox: archive when the first watched thread (ours) closes; new replies -> inbox
-    for f in "$OUTBOX_DIR"/*.md; do
+    # outbox and watch: archive when the first watched thread closes; replies to us -> inbox
+    for f in "$OUTBOX_DIR"/*.md "$WATCH_DIR"/*.md; do
       [ -f "$f" ] || continue
       id=$(basename "$f" .md); since=$(yaml_scalar "$f" last_seen); title=$(field "$f" title)
+      where=$([ "$(dirname "$f")" = "$WATCH_DIR" ] && echo "a thread we watch," || echo "where we posted")
       primary=1 closed_as="" others=0
       for w in $(field "$f" watch); do
         t=$(thread_of "$w"); or="${t% *}"; n="${t#* }"
@@ -224,8 +288,8 @@ case "$cmd" in
           others=$((others + other))
           if [ -n "$to_us" ]; then
             say "reply   $or#$n: $(printf '%s\n' "$to_us" | grep -c .) new for us -> inbox"
-            [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** someone answered on %s#%s, where we posted "%s".\n- **What you'"'"'re deciding:** whether and how to reply. The coordinator reads the thread and drafts the exact reply first.\n\nNew replies since %s:\n\n%s\n' \
-              "$or" "$n" "$title" "$since" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" \
+            [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** someone answered on %s#%s, %s "%s".\n- **What you'"'"'re deciding:** whether and how to reply. The coordinator reads the thread and drafts the exact reply first.\n\nNew replies since %s:\n\n%s\n' \
+              "$or" "$n" "$where" "$title" "$since" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" \
               | bash "$0" add --kind review-comment --priority P1 --repo "$or" --link "$w" --source "$f" \
                   --title "Reply on $or#$n (re: $title)" >/dev/null
           fi

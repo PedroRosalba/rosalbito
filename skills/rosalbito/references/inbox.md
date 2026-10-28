@@ -3,13 +3,14 @@
 > Sessions are disposable; the inbox is not. Anything a session leaves for Pedro goes into
 > the inbox before the session stops, so the terminal can be closed without losing work.
 
-Three sibling folders of markdown files, one file per item (default under
+Four sibling folders of markdown files, one file per item (default under
 `~/Projects/obsidian-vault/oss/`, so Obsidian shows them too):
 
 | folder | means | how an item gets there |
 |---|---|---|
 | `inbox/` | waiting on Pedro: review, approve, decide, read | `inbox.sh add`; `refresh` when someone replies to us |
 | `outbox/` | posted upstream, waiting on them | `inbox.sh posted <id> <urls>` right after posting |
+| `watch/` | someone else's PR/issue we follow instead of competing with it (a gap robobun or a maintainer already has a PR for); we act only if it stalls, closes unmerged, or someone @mentions Pedro | `inbox.sh watch --title <t> <urls>` (new) or `inbox.sh watch <id> <urls>` (move an item) |
 | `archive/` | finished, with `outcome` (merged, closed, answered, dropped, expired, upstream-closed) | `inbox.sh close`, or `refresh` when the watched thread closes |
 
 `inbox.sh` is the only writer; never hand-edit frontmatter from a session.
@@ -53,7 +54,8 @@ Pedro reads the final text of every upstream post before it goes out. A `review-
 
 Inside a priority: `review-comment` → `ship-pr` → `decide` → `read`, oldest first (a human
 waiting on us beats our own shipping). Something where the ball is in the maintainers' court
-belongs in `outbox/`, not in the inbox.
+belongs in `outbox/`, not in the inbox. A gap someone else already has an open PR for goes to
+`watch/`: don't open a competing PR; add evidence to theirs only if it helps.
 
 **Not inbox items: machine and housekeeping limits.** Low disk, a missing toolchain, a slow build, a
 rate limit: never ask Pedro to free space or fix the environment. Do what fits (read-only research, small

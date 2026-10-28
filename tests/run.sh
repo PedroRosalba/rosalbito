@@ -431,6 +431,22 @@ check "dry run changes nothing"                 '[ -f "$ROSALBITO_INBOX/$old.md"
 G refresh >/dev/null
 check "old reads expire to archive"             'grep >/dev/null "^outcome: expired$" "$TMP/archive/$old.md"'
 check "closed upstream thread closes inbox item" 'grep >/dev/null "^outcome: upstream-closed$" "$TMP/archive/$gone.md"'
+fx repos/up/w/issues/5 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"robobun"}}'
+fx repos/up/w/issues/5/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"w1","body":"lgtm"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"dark"},"html_url":"w2","body":"@pedro does yours overlap?"}]'
+w1=$(G watch --title "robobun fix for listen" --repo up/w "https://github.com/up/w/pull/5#discussion_r1" </dev/null)
+check "watch creates a watch item"              '[ -f "$TMP/watch/$w1.md" ] && grep >/dev/null "^kind: watch$" "$TMP/watch/$w1.md" && grep >/dev/null "^watch: https://github.com/up/w/pull/5$" "$TMP/watch/$w1.md"'
+check "watch dedupes by thread"                 '[ "$(G watch --title "renamed" https://github.com/up/w/pull/5 </dev/null)" = "$w1" ] && [ "$(ls "$TMP/watch" | wc -l | tr -d " ")" -eq 1 ] && grep >/dev/null "renamed" "$TMP/watch/$w1.md"'
+check "list --watch shows it, inbox does not"   'bash "$I" list --watch --tsv | cut -f2 | grep >/dev/null "^$w1$" && ! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$w1$"'
+r7=$(bash "$I" add --kind read --title "Gap already has a PR" < <(pw x))
+G watch "$r7" https://github.com/up/w/issues/6 >/dev/null
+check "watch <id> moves an inbox item"          '[ -f "$TMP/watch/$r7.md" ] && [ ! -f "$ROSALBITO_INBOX/$r7.md" ] && grep >/dev/null "^status: watching$" "$TMP/watch/$r7.md"'
+G refresh >/dev/null
+check "mention on a watched thread -> inbox"    'grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: w2"'
+check "watch chatter is activity"               'grep >/dev/null "^activity: 1 new comment" "$TMP/watch/$w1.md" && ! grep -rl "w1$" "$ROSALBITO_INBOX" >/dev/null'
+fx repos/up/w/issues/5 '{"state":"closed","pull_request":{"merged_at":"2026-10-28T00:00:00Z"},"user":{"login":"robobun"}}'
+G refresh >/dev/null
+check "merged watched PR archives the item"     '[ -f "$TMP/archive/$w1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$w1.md"'
 unset ROSALBITO_INBOX GHFIX
 
 echo "oss-detect"
