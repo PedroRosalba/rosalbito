@@ -55,6 +55,11 @@ Inside a priority: `review-comment` → `ship-pr` → `decide` → `read`, oldes
 waiting on us beats our own shipping). Something where the ball is in the maintainers' court
 belongs in `outbox/`, not in the inbox.
 
+**Not inbox items: machine and housekeeping limits.** Low disk, a missing toolchain, a slow build, a
+rate limit: never ask Pedro to free space or fix the environment. Do what fits (read-only research, small
+builds), record what is blocked in the run's notes, and pick it up when resources allow. The inbox is only for
+decisions and posts that are Pedro's to make.
+
 ## Writing an item (any session)
 
 Before a session stops, and whenever a run ends `blocked` or produces something only Pedro
