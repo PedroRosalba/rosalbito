@@ -10,7 +10,7 @@ Four sibling folders of markdown files, one file per item (default under
 |---|---|---|
 | `inbox/` | waiting on Pedro: review, approve, decide, read | `inbox.sh add`; `refresh` when someone replies to us |
 | `outbox/` | posted upstream, waiting on them | `inbox.sh posted <id> <urls>` right after posting |
-| `watch/` | someone else's PR/issue we follow instead of competing with it (a gap robobun or a maintainer already has a PR for); we act only if it stalls, closes unmerged, or someone @mentions Pedro | `inbox.sh watch --title <t> <urls>` (new) or `inbox.sh watch <id> <urls>` (move an item) |
+| `watch/` | someone else's PR/issue we follow instead of competing with it (a gap robobun or a maintainer already has a PR for); we act only if it stalls, closes unmerged, or someone @mentions Pedro. Also threads we plan to contribute to later: `--then "<plan>"` turns its merge/close into a `decide` item for that plan | `inbox.sh watch --title <t> [--then <plan>] <urls>` (new) or `inbox.sh watch <id> <urls>` (move an item) |
 | `archive/` | finished, with `outcome` (merged, closed, answered, dropped, expired, upstream-closed) | `inbox.sh close`, or `refresh` when the watched thread closes |
 
 `inbox.sh` is the only writer; never hand-edit frontmatter from a session.

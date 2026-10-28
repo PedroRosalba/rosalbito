@@ -4,9 +4,10 @@
 #   inbox.sh add --kind <k> --title "<t>" [--link <url>] [--repo <owner/name>]
 #                [--priority P0..P3] [--source <path>] [--session <name>]
 #                                          body (what Pedro must do) from stdin
-#   inbox.sh watch [<id> | --title "<t>" [--repo r] [--source p]] <url>...
+#   inbox.sh watch [<id> | --title "<t>" [--repo r] [--source p]] [--then "<plan>"] <url>...
 #                                          follow someone else's PR/issue instead of competing:
-#                                          archived when it closes, an @mention -> inbox
+#                                          archived when it closes, an @mention -> inbox; with
+#                                          --then, its closing raises a decide item for the plan
 #   inbox.sh list [--outbox|--watch|--archive|--all] [--tsv]
 #                                          default: inbox (waiting on Pedro), by priority
 #   inbox.sh posted <id> <url>...          posted upstream: move to outbox, watch the threads
@@ -30,7 +31,7 @@ KINDS="review-comment ship-pr decide read"
 READ_TTL_DAYS="${ROSALBITO_READ_TTL_DAYS:-14}"
 
 cmd="${1:-list}"; shift || true
-[ "$cmd" = "--help" ] && { sed -n '2,22p' "$0"; exit 0; }
+[ "$cmd" = "--help" ] && { sed -n '2,23p' "$0"; exit 0; }
 [ "$cmd" = "path" ] && { echo "$INBOX_DIR"; exit 0; }
 
 # frontmatter value verbatim: unlike yaml_scalar, keeps '#' (titles say "#8484") and unescapes \"
@@ -186,7 +187,7 @@ case "$cmd" in
     ;;
 
   watch)
-    title="" repo="" src="" session="${CLAUDE_SESSION_NAME:-}" f=""
+    title="" repo="" src="" session="${CLAUDE_SESSION_NAME:-}" f="" plan=""
     case "${1:-}" in ""|--*|http*) ;; *) f=$(item_file "$1"); shift ;; esac
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -194,6 +195,7 @@ case "$cmd" in
         --repo) repo="$2"; shift 2 ;;
         --source) src="$2"; shift 2 ;;
         --session) session="$2"; shift 2 ;;
+        --then) plan="$2"; shift 2 ;;
         --*) die "watch: unknown flag $1" ;;
         *) break ;;
       esac
@@ -233,6 +235,7 @@ case "$cmd" in
       } > "$f"
     fi
     set_key "$f" status watching; set_key "$f" watch "$watch"
+    [ -z "$plan" ] || set_key "$f" then "$plan"
     set_key "$f" last_seen "$(now_iso)"; set_key "$f" updated "$(now_iso)"
     move_to "$f" "$WATCH_DIR"
     basename "$f" .md
@@ -300,7 +303,18 @@ case "$cmd" in
         [ $others -gt 0 ] && set_key "$f" activity "$others new comment(s) not addressed to us since $since"
         set_key "$f" last_seen "$now"
       fi
-      if [ -n "$closed_as" ]; then say "archive $id ($closed_as)"; [ $dry -eq 1 ] || close_item "$f" "$closed_as"; fi
+      if [ -n "$closed_as" ]; then
+        plan=$([ "$(dirname "$f")" = "$WATCH_DIR" ] && field "$f" then || true)
+        if [ -n "$plan" ]; then
+          w1=$(field "$f" link); t1=$(thread_of "$w1")
+          say "plan    $id ($closed_as) -> inbox: $plan"
+          [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** %s, which we were waiting on ("%s"), was %s.\n- **What you'"'"'re deciding:** whether to go ahead with what we planned for this moment: %s\n' \
+            "${t1% *}#${t1#* }" "$title" "$closed_as" "$plan" \
+            | bash "$0" add --kind decide --priority P2 --repo "${t1% *}" --link "$w1" --source "$f" \
+                --title "${t1% *}#${t1#* } $closed_as: $plan" >/dev/null
+        fi
+        say "archive $id ($closed_as)"; [ $dry -eq 1 ] || close_item "$f" "$closed_as"
+      fi
     done
     ;;
 

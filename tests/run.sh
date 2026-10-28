@@ -444,9 +444,15 @@ check "watch <id> moves an inbox item"          '[ -f "$TMP/watch/$r7.md" ] && [
 G refresh >/dev/null
 check "mention on a watched thread -> inbox"    'grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: w2"'
 check "watch chatter is activity"               'grep >/dev/null "^activity: 1 new comment" "$TMP/watch/$w1.md" && ! grep -rl "w1$" "$ROSALBITO_INBOX" >/dev/null'
+fx repos/up/v/issues/8 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"guy"}}'
+w2=$(G watch --title "Guy's event loop" --then "send our waker fix PR" https://github.com/up/v/pull/8 </dev/null)
+check "--then is stored on the watch"           'grep >/dev/null "^then: send our waker fix PR$" "$TMP/watch/$w2.md"'
 fx repos/up/w/issues/5 '{"state":"closed","pull_request":{"merged_at":"2026-10-28T00:00:00Z"},"user":{"login":"robobun"}}'
+fx repos/up/v/issues/8 '{"state":"closed","pull_request":{"merged_at":"2026-10-28T00:00:00Z"},"user":{"login":"guy"}}'
 G refresh >/dev/null
 check "merged watched PR archives the item"     '[ -f "$TMP/archive/$w1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$w1.md"'
+check "no plan -> no inbox item on close"       '! grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: decide$"'
+check "plan fires a decide item when it lands"  'f=$(grep -l "^link: https://github.com/up/v/pull/8$" "$ROSALBITO_INBOX"/*.md) && grep >/dev/null "^kind: decide$" "$f" && grep >/dev/null "send our waker fix PR" "$f" && [ -f "$TMP/archive/$w2.md" ]'
 unset ROSALBITO_INBOX GHFIX
 
 echo "oss-detect"
