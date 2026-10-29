@@ -88,6 +88,12 @@ watch_urls() {
   echo "$watch"
 }
 
+# sessions that worked on a thread (session.sh records), as a section for a new item's body
+session_context() {
+  local s; s=$(bash "$(dirname "$0")/session.sh" find --brief "$1" 2>/dev/null | head -3) || true
+  [ -z "$s" ] || printf '\n**Earlier sessions on this thread** (read the record before drafting; resume it for the full context):\n%s\n' "$s"
+}
+
 case "$cmd" in
   add)
     kind="" title="" link="" repo="" prio="" src="" session="${CLAUDE_SESSION_NAME:-}"
@@ -291,8 +297,8 @@ case "$cmd" in
           others=$((others + other))
           if [ -n "$to_us" ]; then
             say "reply   $or#$n: $(printf '%s\n' "$to_us" | grep -c .) new for us -> inbox"
-            [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** someone answered on %s#%s, %s "%s".\n- **What you'"'"'re deciding:** whether and how to reply. The coordinator reads the thread and drafts the exact reply first.\n\nNew replies since %s:\n\n%s\n' \
-              "$or" "$n" "$where" "$title" "$since" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" \
+            [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** someone answered on %s#%s, %s "%s".\n- **What you'"'"'re deciding:** whether and how to reply. The coordinator reads the thread and drafts the exact reply first.\n\nNew replies since %s:\n\n%s\n%s' \
+              "$or" "$n" "$where" "$title" "$since" "$(printf '%s\n' "$to_us" | awk -F'\t' '{print "- " $1 " @" $2 ": " $3}')" "$(session_context "$w")" \
               | bash "$0" add --kind review-comment --priority P1 --repo "$or" --link "$w" --source "$f" \
                   --title "Reply on $or#$n (re: $title)" >/dev/null
           fi
@@ -308,8 +314,8 @@ case "$cmd" in
         if [ -n "$plan" ]; then
           w1=$(field "$f" link); t1=$(thread_of "$w1")
           say "plan    $id ($closed_as) -> inbox: $plan"
-          [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** %s, which we were waiting on ("%s"), was %s.\n- **What you'"'"'re deciding:** whether to go ahead with what we planned for this moment: %s\n' \
-            "${t1% *}#${t1#* }" "$title" "$closed_as" "$plan" \
+          [ $dry -eq 1 ] || printf '## In plain words\n- **What'"'"'s going on:** %s, which we were waiting on ("%s"), was %s.\n- **What you'"'"'re deciding:** whether to go ahead with what we planned for this moment: %s\n%s' \
+            "${t1% *}#${t1#* }" "$title" "$closed_as" "$plan" "$(session_context "$w1")" \
             | bash "$0" add --kind decide --priority P2 --repo "${t1% *}" --link "$w1" --source "$f" \
                 --title "${t1% *}#${t1#* } $closed_as: $plan" >/dev/null
         fi

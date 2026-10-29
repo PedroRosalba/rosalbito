@@ -453,6 +453,27 @@ G refresh >/dev/null
 check "merged watched PR archives the item"     '[ -f "$TMP/archive/$w1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$w1.md"'
 check "no plan -> no inbox item on close"       '! grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: decide$"'
 check "plan fires a decide item when it lands"  'f=$(grep -l "^link: https://github.com/up/v/pull/8$" "$ROSALBITO_INBOX"/*.md) && grep >/dev/null "^kind: decide$" "$f" && grep >/dev/null "send our waker fix PR" "$f" && [ -f "$TMP/archive/$w2.md" ]'
+echo "session records"
+SS="$S/session.sh"
+SD="$TMP/sessions"
+check "save needs a session id"                 '! (unset CLAUDE_CODE_SESSION_ID; pw x | bash "$SS" save --title t >/dev/null 2>&1)'
+check "save refuses a body without plain words" '! echo "jargon" | CLAUDE_CODE_SESSION_ID=s1 bash "$SS" save --title t >/dev/null 2>&1'
+o1=$(bash "$I" add --kind ship-pr --title "Waker fix" < <(pw x)); G posted "$o1" "https://github.com/up/t/issues/33#issuecomment-9" >/dev/null
+s1=$(pw "worked on the waker bug" | CLAUDE_CODE_SESSION_ID=sess-1 bash "$SS" save --title "Tokio waker issue" --repo up/t --items "$o1")
+check "save writes a record with resume info"   '[ -f "$SD/$s1.md" ] && grep >/dev/null "^session_id: sess-1$" "$SD/$s1.md" && grep >/dev/null "claude --resume sess-1" "$SD/$s1.md" && grep >/dev/null "^cwd: $PWD$" "$SD/$s1.md"'
+check "items link back to the record"           'grep >/dev/null "^context: $SD/$s1.md$" "$TMP/outbox/$o1.md"'
+check "items add their threads to the watch"    'grep >/dev/null "^watch: https://github.com/up/t/issues/33$" "$SD/$s1.md"'
+s1b=$(pw "later: fix PR exists" | CLAUDE_CODE_SESSION_ID=sess-1 bash "$SS" save --title "Tokio waker issue" --watch https://github.com/up/t/pull/37)
+check "same session saves in place, lists merge" '[ "$s1b" = "$s1" ] && [ "$(ls "$SD" | wc -l | tr -d " ")" -eq 1 ] && grep >/dev/null "later: fix PR" "$SD/$s1.md" && grep >/dev/null "^watch: https://github.com/up/t/issues/33 https://github.com/up/t/pull/37$" "$SD/$s1.md" && grep >/dev/null "^repo: up/t$" "$SD/$s1.md"'
+s2=$(pw "other work" | CLAUDE_CODE_SESSION_ID=sess-2 bash "$SS" save --title "Bun net gaps" --repo oven/bun)
+check "find by thread (pull vs issues, fragment)" '[ "$(bash "$SS" find "https://github.com/up/t/pull/33#x" | cut -f1)" = "$s1" ]'
+check "find does not match a longer number"     '[ -z "$(bash "$SS" find https://github.com/up/t/issues/3)" ]'
+check "find by repo and by text"                '[ "$(bash "$SS" find oven/bun | cut -f1)" = "$s2" ] && [ "$(bash "$SS" find "fix PR exists" | cut -f1)" = "$s1" ]'
+check "resume prints the command"               'bash "$SS" resume "$s1" | grep >/dev/null "claude --resume sess-1$"'
+fx repos/up/t/issues/33 '{"state":"open","pull_request":null,"user":{"login":"pedro"}}'
+fx repos/up/t/issues/33/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"t1","body":"can you test the fix?"}]'
+G refresh >/dev/null
+check "a reply item points at the old session"  'f=$(grep -l "^link: https://github.com/up/t/issues/33$" "$ROSALBITO_INBOX"/*.md) && grep >/dev/null "Earlier sessions on this thread" "$f" && grep >/dev/null "claude --resume sess-1" "$f"'
 unset ROSALBITO_INBOX GHFIX
 
 echo "oss-detect"
