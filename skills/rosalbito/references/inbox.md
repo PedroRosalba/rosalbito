@@ -27,13 +27,14 @@ Four sibling folders of markdown files, one file per item (default under
 ### In plain words (required, first thing in every body)
 
 Pedro reviews many items in one sitting, cold. Each body starts with this section;
-`inbox.sh add` refuses a new item without it. Under ~170 words, jargon explained in
+`inbox.sh add` refuses a new item without it. Under ~220 words, jargon explained in
 parentheses the first time, overlaps with other items named.
 
 ```markdown
 ## In plain words
 - **What's going on:** 1–3 sentences a non-specialist follows.
 - **What gets affected:** who or what breaks or benefits, how badly (crash, slow leak, wrong data, cosmetic), at what scale.
+- **Why it happens:** the likely cause in one picture, the change that introduced it (PR, date) and why that change shipped, and the trade-off it made that let this slip through. Say how sure we are (confirmed, source-read, hypothesis). For a bug, also how often it hits (one reporter, every run, needs X).
 - **What you're deciding:** what "ok" triggers concretely (public comment on X, new PR, teardown, nothing public). For `read`: the takeaway.
 - **If we do it:** what it means for the project's scope: follow-up work, commitments, maintainer relationship.
 - **If we don't:** what happens; does waiting cost anything.
