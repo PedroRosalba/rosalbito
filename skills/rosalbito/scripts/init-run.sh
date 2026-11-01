@@ -82,6 +82,8 @@ if [ "$(tier_rank "$RISK")" -ge 2 ]; then
 fi
 : > "$RUN_DIR/evidence.jsonl"
 register_repo
+# machine housekeeping: at most every interval_days (sooner when disk is low), detached so the run never waits
+[ "${ROSALBITO_PRUNE:-1}" = 0 ] || (nohup bash "$SKILL_DIR/scripts/prune.sh" --auto >/dev/null 2>&1 &)
 
 echo "run_id=$RUN_ID"
 echo "run_dir=$RUN_DIR"
