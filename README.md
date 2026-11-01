@@ -136,10 +136,11 @@ default even for CRITICAL work. `decision` fires only for the triggers in
 hooks/hooks.json            plugin hook registration: the guard on every Bash call
 skills/rosalbito/           the Claude Code skill (standalone: symlinked to ~/.claude/skills/rosalbito)
   SKILL.md                  thin orchestrator (~200 lines): dispatch, classify, loop, understand and grill modes
-  config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/), pricing.json
+  config/                   risk-overrides.yaml, caps.yaml (per-repo overridable via .agent/), pricing.json,
+                            prune.yaml (machine-wide, overridable in ~/.rosalbito/prune.yaml)
   scripts/                  init-context, init-run, state, verify, detect-checks, classify-paths,
                             caps-check, start-loop, finish-run, metrics, evidence-summary,
-                            usage, collect, dashboard (+ dashboard-server.mjs)
+                            usage, collect, dashboard (+ dashboard-server.mjs), prune
   hooks/rosalbito-guard.sh  PreToolUse hard gate
   templates/                current.md, acceptance.yaml, decision.md, blocked.md, report.md, pr-body.md, dashboard.html
   references/               routing, driver, reviews, understanding, reports, state-schema
@@ -229,6 +230,32 @@ The numbers are read after the fact:
   keeping filters and expanded rows. `dashboard.sh` without `--serve` writes the same page as a static file.
 
 On a Claude subscription the cost is a comparison figure, not the invoice.
+
+## Machine pruning
+
+Agents fill disks: every worktree gets its own `node_modules`, every Rust experiment its own `target/`.
+`prune.sh` frees space by deleting only what rebuilds or re-downloads itself:
+
+```bash
+bash skills/rosalbito/scripts/prune.sh            # dry run: what would go, how much, plus suggestions
+bash skills/rosalbito/scripts/prune.sh --apply    # delete it        (or: /rosalbito prune apply)
+```
+
+- **caches**: npm, yarn, pnpm (unreferenced), Homebrew downloads, uv, pip, Cypress, node-gyp, go-build,
+  cargo registry, Docker *build* cache. Never `brew cleanup` (old kegs can still be loaded), never
+  Docker images or volumes.
+- **artifacts**: `node_modules` (beside a `package.json`) and cargo `target/` (carrying `CACHEDIR.TAG`)
+  of projects where no file changed in `stale_days` (14). Anything tracked by git (test fixtures,
+  vendored deps) is skipped.
+- **tmp**: Claude Code scratch dirs in `/tmp/claude-<uid>/` untouched for `tmp_stale_days` (3).
+- **suggestions only**: clean, pushed worktrees idle for `stale_days`, and non-default, non-nightly rust
+  toolchains, each with the command to remove it. Never deleted by the script.
+
+It runs by itself, but not constantly: `init-run.sh` starts `prune.sh --auto` in the background, which
+prunes at most every `interval_days` (7), or every 6 h while free disk is under `min_free_gb` (20). Caches
+are skipped while a package manager or build is running. Projects are scanned under `roots`, by default the
+parent dirs of every repo Rosalbito has worked in. Tune any key in `~/.rosalbito/prune.yaml`;
+`ROSALBITO_PRUNE=0` turns the automatic run off. Each run appends a line to `~/.rosalbito/prune.jsonl`.
 
 ## Hard caps
 
