@@ -14,6 +14,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export ROSALBITO_HOME="$TMP/.rosalbito" CLAUDE_PROJECTS_DIR="$TMP/.projects"   # never touch the real index or transcripts
+export ROSALBITO_PRUNE=0   # init-run must not prune the real machine's caches
 unset CLAUDE_CODE_SESSION_ID
 cd "$TMP" && git init -q -b main . 2>/dev/null || git init -q .
 git config user.email t@t; git config user.name t
