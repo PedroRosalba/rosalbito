@@ -60,7 +60,8 @@ belongs in `outbox/`, not in the inbox. A gap someone else already has an open P
 
 **Not inbox items: machine and housekeeping limits.** Low disk, a missing toolchain, a slow build, a
 rate limit: never ask Pedro to free space or fix the environment. Do what fits (read-only research, small
-builds), record what is blocked in the run's notes, and pick it up when resources allow. The inbox is only for
+builds), record what is blocked in the run's notes, and pick it up when resources allow. Low disk: run
+`scripts/prune.sh --apply` first; it only deletes what rebuilds itself, so it needs no one's approval. The inbox is only for
 decisions and posts that are Pedro's to make.
 
 ## Writing an item (any session)
