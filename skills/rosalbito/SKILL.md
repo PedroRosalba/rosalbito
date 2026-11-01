@@ -41,6 +41,7 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 | active run (`status` not `done\|blocked`) | **Resume**: read `runs/current/state.md` fully, `caps-check.sh`, `start-loop.sh` (re-arm for this session), continue from `next_action`. Don't re-classify or re-plan unless `next_action` says so. Don't trust a dead session's claims: re-verify before advancing. |
 | `/rosalbito status` | print `state.sh show` + `evidence-summary.sh`; stop. |
 | `/rosalbito dashboard` | if `curl -s localhost:7777/api/runs` answers, print `http://localhost:7777` (live). Else `dashboard.sh --open` (snapshot at `~/.rosalbito/dashboard.html`) and say `dashboard.sh --serve` / `--install-service` make it live. Stop. |
+| `/rosalbito prune [apply]` | `prune.sh` (dry run) and show its output; with `apply`, or once Pedro says go, `prune.sh --apply`. It only deletes what rebuilds itself (caches, stale `node_modules`/`target/`, old Claude scratch); suggestions it lists (worktrees, toolchains) are never removed without Pedro naming them. Stop. |
 | `/rosalbito understand [focus]` | §Understand mode. |
 | `/rosalbito grill [topic]` | §Grill mode. |
 | `/rosalbito inbox [sweep]` | read `references/inbox.md`; run its coordinator (or sweep) protocol in this context. An item with `context:` or "Earlier sessions on this thread": read that record first (`references/sessions.md` §Recall). |
