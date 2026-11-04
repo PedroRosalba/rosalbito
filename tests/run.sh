@@ -603,6 +603,23 @@ CODES=(a.rs a.c a.cc a.cpp a.cxx a.c++ a.h a.hpp a.ts a.tsx a.js a.jsx a.mjs a.c
 check "every source extension counts as code"    '[ "$(evlist k/codes tests/a.rs:1 "${CODES[@]}")" = "$(sorted "${CODES[@]}")" ]'
 NOTCODES=(README.rst config.yaml data.json Cargo.toml .github/workflows/ci.yml run.sh Makefile a.css src/FooTest.java)
 check "other files and tests are not code"       '[ -z "$(evlist k/notcodes tests/a.rs:1 "${NOTCODES[@]}")" ]'
+evpr c/c 1 "Other files are free" "" src/a.rs:1 tests/a.rs:1 data.json:5000 a.yaml:1 b.yaml:1 c.yaml:1 d.yaml:1 e.yaml:1 f.yaml:1 g.yaml:1 h.yaml:1 i.yaml:1 j.yaml:1 k.yaml:1
+evpr c/c 2 "Test removed" "" src/a.rs:1 tests/a.rs:0:50:removed
+evpr c/c 3 "Code removed" "" src/a.rs:0:50:removed tests/a.rs:1
+evpr c/c 4 "Deletes a lot, modified" "" src/a.rs:5:2000 tests/a.rs:1
+evpr c/c 5 "Deletes a lot, removed" "" src/a.rs:1 tests/a.rs:1 src/old.rs:0:2000:removed
+evpr c/c 6 "Deletions lower the score" "" src/a.rs:1:300 tests/a.rs:1
+evpr c/c 7 "Removed files still count" "" src/a.rs:1 tests/a.rs:1 src/old.rs:0:90:removed
+evpr c/c 8 "Removed docs count for nothing" "" src/a.rs:1 tests/a.rs:1 README.md:0:5000:removed
+evpr c/c 9 "Code renamed, 0/0" "" src/a.rs:0:0:renamed tests/a.rs:1
+evpr c/c 10 "Test renamed, 0/0" "" src/a.rs:1 tests/a.rs:0:0:renamed
+evpr c/c 11 "Test mode change only" "" src/a.rs:1 tests/run.py:0:0:changed
+evpr c/c 12 "Code mode change only" "" src/a.py:0:0:changed tests/a.py:1
+evpr c/c 13 "A rename beside a real change" "" src/a.rs:1 tests/a.rs:1 src/moved.rs:0:0:renamed
+evpr c/c 14 "A rename with edits counts" "" src/a.rs:1:1:renamed tests/a.rs:1:1:renamed
+out="$(EC --since 2026-10-01 --repo c/c)"
+check "other files don't count towards the limits" '[ "$(row 1 | cut -f1,4,5)" = "$(printf "798\t2\t2")" ]'
+check "a removed test doesn't qualify a PR"     '[ -z "$(row 2)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
