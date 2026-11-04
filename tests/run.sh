@@ -663,6 +663,10 @@ EC --built https://github.com/o/r/issues/14 2>/dev/null; rc=$?
 check "--built on a non-PR URL exits 2"         '[ $rc -eq 2 ]'
 EC --built https://github.com/o/r/pull/14 --since 2026-10-01 2>/dev/null; rc=$?
 check "--built takes no other flags"            '[ $rc -eq 2 ]'
+EC --since 2026-10-01 --repo 'cloudflare/*' 2>"$TMP/everr"; rc=$?
+check "a * in --repo exits 2 with a clear message" '[ $rc -eq 2 ] && grep >/dev/null "not a pattern" "$TMP/everr" && [ ! -s "$EVFIX/calls" ]'
+EC --repo o/r --repo '*/x' 2>/dev/null; rc=$?
+check "a * in any --repo exits 2 before anything else" '[ $rc -eq 2 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
