@@ -84,3 +84,13 @@ fi
 
 [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || bad "$USAGE"
 [ ${#REPOS[@]} -gt 0 ] || [ -n "$AUTHOR" ] || bad "$USAGE"
+for r in ${REPOS[@]+"${REPOS[@]}"}; do
+  [[ "$r" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]] || bad "--repo must be owner/name, got '$r'"
+done
+command -v jq >/dev/null || die "jq is required"
+
+MAX_ADD="$(yaml_scalar "$CFG" max_additions)"; MAX_ADD="${MAX_ADD:-800}"
+MAX_FILES="$(yaml_scalar "$CFG" max_files)";   MAX_FILES="${MAX_FILES:-12}"
+[[ "$MAX_ADD$MAX_FILES" =~ ^[0-9]+$ ]] || die "max_additions and max_files in $CFG must be numbers"
+
+# file_kind <lower-cased path> <path>: sets KIND to code, test or other.
