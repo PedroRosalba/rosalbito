@@ -58,3 +58,20 @@ CFG="$(config_file evals.yaml)"
 EVALS_DIR="${ROSALBITO_EVALS_DIR:-$(yaml_scalar "$CFG" evals_dir)}"; EVALS_DIR="${EVALS_DIR:-$HOME/Projects/pr-evals}"
 case "$EVALS_DIR" in "~"*) EVALS_DIR="$HOME${EVALS_DIR#\~}" ;; esac
 
+# URLs on stdin -> <owner>/<repo>/pull/<n> keys. Scheme, case and anything after the number go.
+to_keys() {
+  tr '[:upper:]' '[:lower:]' \
+    | sed -nE 's|^[[:space:]]*([a-z]+://)?(www\.)?github\.com/([^/]+)/([^/]+)/pull/([0-9]+)([/?#].*)?[[:space:]]*$|\3/\4/pull/\5|p'
+}
+pr_key() { printf '%s\n' "$1" | to_keys; }
+
+# every built or dropped PR, one key per line
+built_keys() {
+  { cat "$EVALS_DIR"/tasks/*/task.toml 2>/dev/null \
+      | sed -nE "s/^[[:space:]]*[\"']?source_pr[\"']?[[:space:]]*=[[:space:]]*[\"']([^\"']*)[\"'].*/\1/p"
+    cat "$EVALS_DIR/dropped.txt" 2>/dev/null
+  } | to_keys | sort -u
+}
+BUILT="$(built_keys)"
+is_built() { case $'\n'"$BUILT"$'\n' in *$'\n'"$1"$'\n'*) return 0 ;; esac; return 1; }
+
