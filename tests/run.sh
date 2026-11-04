@@ -678,6 +678,11 @@ out="$(EVFIX_BROKEN_REPO=o/r EC --since 2026-10-01 --repo o/r 2>"$TMP/everr")"; 
 check "gh failure exits non-zero, no table"     '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "gh search prs failed" "$TMP/everr"'
 out="$(EVFIX_BROKEN_REPO=t/a EC --since 2026-10-01 --repo t/b --repo t/a 2>/dev/null)"; rc=$?
 check "one failing repo fails the whole run"    '[ $rc -ne 0 ] && [ -z "$out" ]'
+out="$(EVFIX_GARBAGE=1 EC --since 2026-10-01 --repo o/r 2>/dev/null)"; rc=$?
+check "gh output that is not JSON is a failure" '[ $rc -ne 0 ] && [ -z "$out" ]'
+evpr u/v 1 "Files fail" "" src/a.rs:1 tests/a.rs:1; rm "$(evfile u/v 1)"
+out="$(EC --since 2026-10-01 --repo u/v 2>"$TMP/everr")"; rc=$?
+check "failure fetching files exits non-zero"   '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "pull/1" "$TMP/everr"'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
