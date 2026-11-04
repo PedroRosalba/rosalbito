@@ -88,8 +88,8 @@ Runs in **this** context (Pedro is interacting). Read-only until Pedro approves 
    merged or closed, turns replies on our posts (any reply on our own PR/issue, mentions of
    Pedro elsewhere) into `review-comment` inbox items, records other chatter as `activity` on
    the outbox item, expires `read` items older than 14 days, closes inbox items whose thread
-   closed before we posted. Then `inbox.sh list --tsv`; for inbox items still worth a look,
-   check CI with `gh pr view <url> --json statusCheckRollup` (red → P0).
+   closed before we posted. Then `inbox.sh list --tsv`; for inbox items still worth a look that
+   link a GitHub PR, check CI with `gh pr view <url> --json statusCheckRollup` (red → P0).
 2. **Discover.** `gh search prs --author @me --state open` and
    `gh search issues --commenter @me --state open --updated ">=<7 days ago>"`: comments
    addressed to Pedro that have no inbox item become `review-comment` items (draft the
