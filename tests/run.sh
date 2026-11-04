@@ -491,6 +491,71 @@ check "context override + path match (subdir)" 'bash "$O" "$TMP/oss/research/sub
 check "identity mismatch reported"              'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^identity_ok=0$"'
 rm .agent/context/oss.yaml
 
+echo "eval-candidates (fake gh)"
+E="$S/eval-candidates.sh"
+EVFIX="$TMP/evfix"; mkdir -p "$EVFIX/files" "$TMP/evalbin" "$TMP/evals/tasks/built"; export EVFIX
+cat > "$TMP/evalbin/gh" <<'EOF'
+#!/usr/bin/env bash
+# fake gh. `search prs`: $EVFIX/prs.jsonl, filtered by --repo. `api`: $EVFIX/files/<path>.json,
+# a list of pages: only --paginate gets past the first. EVFIX_BROKEN_REPO and EVFIX_GARBAGE break it.
+printf '%s\n' "$*" >> "$EVFIX/calls"
+if [ "$1" = search ]; then
+  shift 2; repo=""
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; *) shift ;; esac; done
+  [ -z "${EVFIX_BROKEN_REPO:-}" ] || [ "$repo" != "$EVFIX_BROKEN_REPO" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+  [ -z "${EVFIX_GARBAGE:-}" ] || { echo "<html>busy</html>"; exit 0; }
+  jq -s --arg r "$repo" 'map(select($r == "" or .repository.nameWithOwner == $r))' "$EVFIX/prs.jsonl"
+  exit 0
+fi
+shift; p="" q="." all=0
+while [ $# -gt 0 ]; do case "$1" in --paginate) all=1; shift ;; --jq) q="$2"; shift 2 ;; *) p="$1"; shift ;; esac; done
+f="$EVFIX/files/$(printf '%s' "${p%%\?*}" | tr / _).json"
+[ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+if [ $all -eq 1 ]; then jq -c '.[]' "$f" | while read -r page; do jq -r "$q" <<<"$page"; done
+else jq -c '.[0]' "$f" | jq -r "$q"; fi
+EOF
+chmod +x "$TMP/evalbin/gh"
+EC() { PATH="$TMP/evalbin:$PATH" ROSALBITO_EVALS_DIR="${EVDIR:-$TMP/evals}" bash "$E" "$@"; }
+evfile() { printf '%s' "$EVFIX/files/repos_$(printf '%s' "$1" | tr / _)_pulls_$2_files.json"; }
+evpr() {  # evpr <repo> <number> <title> <body> <path:additions[:deletions[:status]]>...
+  local r="$1" n="$2" t="$3" b="$4"; shift 4
+  jq -cn --arg r "$r" --argjson n "$n" --arg t "$t" --arg b "$b" \
+    '{repository:{nameWithOwner:$r}, number:$n, title:$t, body:$b, url:"https://github.com/\($r)/pull/\($n)"}' >> "$EVFIX/prs.jsonl"
+  jq -cn '[$ARGS.positional | map(split(":") | {filename:.[0], additions:(.[1] | tonumber), deletions:((.[2] // "0") | tonumber), status:(.[3] // "modified")})]' --args "$@" > "$(evfile "$r" "$n")"
+}
+many() { local i; for ((i=1;i<=$1;i++)); do printf 'src/f%s.rs:1 ' "$i"; done; }
+mkdir -p "$TMP/evals/tasks/quoted" "$TMP/evals/tasks/moved"
+printf 'source_pr = "https://github.com/o/r/pull/14"\n' > "$TMP/evals/tasks/built/task.toml"
+printf '[metadata]\n"source_pr" = '"'"'https://github.com/o/r/pull/18'"'"'\n' > "$TMP/evals/tasks/quoted/task.toml"
+printf 'source_pr = "http://GitHub.com/O/R/pull/19/files/"\n' > "$TMP/evals/tasks/moved/task.toml"
+printf 'https://github.com/o/r/pull/17\n' > "$TMP/evals/dropped.txt"
+evpr o/r 1 "Small fix" "No issue here." src/a.rs:10 tests/a.rs:5
+evpr o/r 2 "Medium fix" "" lib/b.go:100 lib/b_test.go:50
+evpr o/r 3 "Bonus fix" $'Some text.\r\n\r\nFixes #77\r\n' src/c.py:140 test_c.py:40
+evpr o/r 4 "Mentions only" "Prefixes #9 and mentions #10" src/d.ts:100 src/d.spec.ts:100
+evpr o/r 5 "Docs only" "" README.md:5 docs/guide.txt:5 CHANGELOG.rst:2 .changeset/x.txt:1 site/a.mdx:1
+evpr o/r 6 "Docs and tests, no code" "" docs/guide.txt:5 tests/a.rs:5
+evpr o/r 7 "Tests only" "" tests/x.rs:5 src/__tests__/y.js:5
+evpr o/r 8 "Code without tests" "" src/z.rs:5 tests/README.md:2
+evpr o/r 9 "One addition too many" "" src/big.rs:800 tests/big.rs:1
+evpr o/r 10 "One file too many" "" $(many 12) tests/m.rs:1
+evpr o/r 11 "Exactly at the limits" "" src/e.rs:780 $(many 10) tests/e.rs:10
+evpr o/r 12 "Huge lockfiles" "" Cargo.lock:5000 web/pnpm-lock.yaml:900 package-lock.json:1 yarn.lock:1 src/l.rs:10 src/l.test.ts:10
+evpr o/r 13 "Lockfile and tests, no code" "" package-lock.json:10 tests/y.rs:1
+evpr o/r 14 "Already built" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 140 "Longer number than a built one" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 15 $'Fix\ttabbed\ntitle' "" src/t.rs:30 tests/t.rs:30
+evpr o/r 16 "Oversized on page two" "" src/p.rs:1 tests/p.rs:1
+evpr o/r 17 "Dropped" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 18 "Built, quoted key" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 19 "Built, untidy URL" "" src/q.rs:1 tests/q.rs:1
+evpr other/r 14 "Same repo and number, other owner" "" src/q.rs:1 tests/q.rs:1
+jq -c '. + [[{filename:"src/huge.rs", additions:5000, deletions:0, status:"added"}]]' "$(evfile o/r 16)" > "$EVFIX/pages" && mv "$EVFIX/pages" "$(evfile o/r 16)"
+out="$(EC --since 2026-10-01 --repo o/r)"; rc=$?
+col() { printf '%s\n' "$out" | tail -n +2 | cut -f"$1" | tr '\n' ' '; }
+row() { printf '%s\n' "$out" | awk -F'\t' -v n="$1" 'NR>1 && $3==n'; }
+check "exits 0 with the header first"           '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | head -1)" = "$(printf "score\trepo\tnumber\tadditions\tfiles\ttitle\turl")" ]'
+check "best first, excluded PRs gone"           '[ "$(col 3)" = "3 140 1 12 15 2 4 11 " ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
