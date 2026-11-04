@@ -89,3 +89,30 @@ Each was learned from the worked example.
   local runtime can't run these policies, record that, validate the image with the phase
   overrides removed in a throwaway copy, and say so in the report.
 
+## 3. Validate
+
+`nice -n 10 env CARGO_BUILD_JOBS=2 bash <evals_dir>/scripts/validate.sh <name>`.
+
+1. For every failing case read WHY it failed. A wrong fix must fail at the check it was written
+   to trigger, not somewhere else.
+2. Then the two opposite checks. A correct alternative must pass. If the upstream test rejects
+   a correct alternative, loosen the grader and record that in the report.
+3. Grader validation runs on the host toolchain, so before building the image list what the tests
+   actually need: search for `RUSTUP_TOOLCHAIN`, `nightly`, `-Zbuild-std` and similar, and read
+   the repo's CI job. Install all of it in the Dockerfile, including under the exact toolchain
+   name the tests hardcode. The agent and the verifier must get the same tools from PATH: don't
+   rely on sourcing an env script only in `test.sh`.
+
+Two levels. The report and the inbox item state each one as run or not run, and anything less
+than the first is reported as not validated, naming what wasn't run.
+
+- **Grader validated**: `scripts/validate.sh <name>` exits 0 with no case filter. The script
+  itself refuses a task lacking oracle, nop, at least one `flawed-*` and at least one `alt-*`.
+- **Image validated**: `harbor run -p tasks/<name> -a oracle` scores 1 and
+  `harbor run -p tasks/<name> -a nop` scores 0, using `uvx --from harbor harbor` when `harbor`
+  isn't on PATH. A Docker client that doesn't answer makes this not run; it doesn't block the
+  draft.
+
+A task isn't a finished example until it is image validated. The two levels don't prove a real
+agent can run the task. An agent smoke run stays Pedro's call, because it costs money.
+
