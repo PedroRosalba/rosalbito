@@ -556,6 +556,8 @@ col() { printf '%s\n' "$out" | tail -n +2 | cut -f"$1" | tr '\n' ' '; }
 row() { printf '%s\n' "$out" | awk -F'\t' -v n="$1" 'NR>1 && $3==n'; }
 check "exits 0 with the header first"           '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | head -1)" = "$(printf "score\trepo\tnumber\tadditions\tfiles\ttitle\turl")" ]'
 check "best first, excluded PRs gone"           '[ "$(col 3)" = "3 140 1 12 15 2 4 11 " ]'
+check "row has all seven columns in order"      '[ "$(row 3)" = "$(printf "820\to/r\t3\t180\t2\tBonus fix\thttps://github.com/o/r/pull/3")" ]'
+check "merged PRs since the date are searched"  'grep -- "^search prs --repo o/r --merged --merged-at >=2026-10-01 " "$EVFIX/calls" >/dev/null'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
