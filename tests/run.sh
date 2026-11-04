@@ -587,6 +587,18 @@ out="$(EC --since 2026-10-01 --repo t/b --repo t/a --repo t/a)"
 check "ties sort by repo, then number; no dupes" '[ "$(col 2 | tr -d " ")$(col 3)" = "t/at/at/b9 10 1 " ]'
 EVDIR="$TMP/no-such-dir" EC --since 2026-10-01 --repo o/r > "$TMP/evout"; rc=$?
 check "a missing evals dir excludes nothing"    '[ $rc -eq 0 ] && grep >/dev/null "/pull/14$" "$TMP/evout"'
+evlist() {  # evlist <repo> <fixed path> <path>...: one PR per path, each with the fixed file; prints the listed paths
+  local repo="$1" fixed="$2" p n=0; shift 2
+  for p in "$@"; do n=$((n+1)); evpr "$repo" "$n" "$p" "" "$fixed" "$p:1"; done
+  EC --since 2026-10-01 --repo "$repo" 2>/dev/null | tail -n +2 | cut -f6 | LC_ALL=C sort | tr '\n' ' '
+}
+sorted() { printf '%s\n' "$@" | LC_ALL=C sort | tr '\n' ' '; }
+TESTS=(a_test.py a-test.js a.test.ts a.spec.ts a_spec.rb test_a.py TEST_A.PY src/FooTest.java src/FooTests.swift src/tests.rs conftest.py src/a.snap
+  test/a.rs tests/a.rs src/__tests__/a.js Tests/A.swift testdata/a.bin spec/a.rb specs/a.rb e2e/a.ts src/__snapshots__/a.txt fixtures/a.json
+  src/spec/parser.rs src/test_utils.rs assets/fixtures/x.json)
+check "every test path and name counts as a test" '[ "$(evlist k/tests src/a.rs:1 "${TESTS[@]}")" = "$(sorted "${TESTS[@]}")" ]'
+NOTTESTS=(src/latest.js contest.py src/attest.rs README.rst config.yaml Cargo.toml package.json .github/workflows/ci.yml .github/workflows/test_x.yml docs/test_a.py tests/README.md)
+check "lookalikes, CI and config are not tests"  '[ -z "$(evlist k/nottests src/a.rs:1 "${NOTTESTS[@]}")" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
