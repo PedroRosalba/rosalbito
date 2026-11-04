@@ -703,6 +703,8 @@ PATH="$TMP/evalbin:$PATH" ROSALBITO_INBOX="$EVI" ROSALBITO_GH_LOGIN=pedro bash "
 check "an item linked to the report survives refresh and re-adds" '[ -f "$EVI/$ei.md" ] && [ "$(ls "$EVI" | wc -l | tr -d " ")" -eq 1 ]'
 ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" close "$ei" dropped >/dev/null
 check "a dropped eval item leaves the inbox"    '[ ! -f "$EVI/$ei.md" ] && grep >/dev/null "^outcome: dropped$" "$TMP/evinbox/archive/$ei.md" && grep >/dev/null "^status: dropped$" "$TMP/evinbox/archive/$ei.md"'
+check "the protocol never links the merged PR"  'grep >/dev/null -- "--link <abs path to reports" "$SKILL_DIR/references/evals.md"'
+check "patrol: eval drafts, then the chat report" 'grep >/dev/null "^7\. \*\*Eval drafts" "$SKILL_DIR/references/oss.md" && grep >/dev/null "^8\. \*\*Report" "$SKILL_DIR/references/oss.md"'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
