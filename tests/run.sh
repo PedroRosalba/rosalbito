@@ -673,6 +673,11 @@ check "progress on stderr every 25 PRs"         '[ $rc -eq 0 ] && [ "$(cat "$TMP
 mkdir -p .agent/context && printf 'evals_dir: %s\nmax_additions: 20\nmax_files: 2\n' "$TMP/evals" > .agent/context/evals.yaml
 out="$(PATH="$TMP/evalbin:$PATH" bash "$E" --since 2026-10-01 --repo o/r)"
 check "limits and evals_dir come from the config" '[ "$(col 3)" = "140 1 12 " ]'
+rm .agent/context/evals.yaml
+out="$(EVFIX_BROKEN_REPO=o/r EC --since 2026-10-01 --repo o/r 2>"$TMP/everr")"; rc=$?
+check "gh failure exits non-zero, no table"     '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "gh search prs failed" "$TMP/everr"'
+out="$(EVFIX_BROKEN_REPO=t/a EC --since 2026-10-01 --repo t/b --repo t/a 2>/dev/null)"; rc=$?
+check "one failing repo fails the whole run"    '[ $rc -ne 0 ] && [ -z "$out" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
