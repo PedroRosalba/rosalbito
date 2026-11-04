@@ -31,3 +31,61 @@ From the list choose at most `max_drafts_per_patrol` by reading the actual diff 
 PRs where a tempting wrong fix exists and the test checks behaviour. Skip anything needing a
 build too heavy for the machine. Zero is a fine answer.
 
+## 2. Build
+
+The eval repo is local only, so drafts commit straight to its `main`. One `[writer]` subagent per
+draft, one at a time: they share the checkout and `.work/`. Before each draft run
+`git -C <evals_dir> status --porcelain`. If the repo is dirty, for example left by a crashed
+draft, skip the draft and name it in the chat report. Never clean up or stash what's there.
+
+`<name>` is `<repo>-<number>`. Add the owner only when two repos collide. Produce:
+
+```text
+tasks/<name>/        instruction.md, task.toml (with [metadata] source_pr = "<url>"),
+                     environment/Dockerfile, solution/, tests/test.sh, tests/grade.sh, tests/test.patch
+validation/<name>/   expected.tsv, config.env, at least one flawed-* fix, one alt-* correct fix
+reports/<name>.md    what was built, what validation changed, what wasn't run
+```
+
+`source_pr` holds the canonical URL `gh pr view <url> --json url` reports at build time, because
+exclusion compares owner, repo and number.
+
+These files can become public after Pedro's OK, and only then. They contain no personal names or
+handles: grep them for the PR's author and reviewers before committing, and use plain diffs for
+patches, not `format-patch`.
+
+### Prompt rules (`instruction.md`)
+
+- State behaviour, not the fix. Remove the diagnosis and suggested fixes from the source issue.
+- Every rule the grader enforces is stated in the prompt.
+- Compare the prompt against what the tests really assert.
+- Compare the fixtures with the hidden test for fixes that pass by luck, including renamed or
+  aliased identifiers and a second code path for the same bug. Cover those with cases.
+- A "must not change" claim in a prompt needs a check that actually enforces it.
+
+### Grader rules (`tests/grade.sh`, `tests/test.sh`)
+
+Each was learned from the worked example.
+
+- Exit 0 pass, 1 wrong, 2 grader or environment error. An error writes no reward.
+- Check the count of tests that ran: `cargo test` exits 0 when a filter matches nothing.
+- A skipped required test is an error, and `grade.sh` names which test is required. A test that
+  legitimately skips (for example because it needs a patched toolchain) must not count towards
+  the expected test total.
+- Scan logs for environment signatures (out of disk, killed, offline or fetch failures) before
+  treating a failure as the solution's fault, so they exit 2.
+- Pin tool versions to what the repo's own CI uses: a newer tool can hide the bug.
+- Restore test files from the base commit before applying the test patch.
+- Fetch only the base commit into the image.
+- Network, in `task.toml`:
+  - `[environment] network_mode = "public"`, so `agent.setup()` can install the agent.
+  - `[agent] network_mode = "allowlist"` with the model API hosts in `allowed_hosts`, so it can't
+    fetch the merged fix.
+  - `[verifier] network_mode = "no-network"`.
+
+  Harbor applies the phase policy to every agent, oracle and nop included. On Docker, any
+  `[agent]` or `[verifier]` override needs the nftables sidecar for them too, and on a runtime
+  without it the trial raises an error. Only a real agent's API traffic stays unproven. If the
+  local runtime can't run these policies, record that, validate the image with the phase
+  overrides removed in a throwaway copy, and say so in the report.
+
