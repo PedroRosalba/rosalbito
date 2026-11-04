@@ -696,6 +696,13 @@ check "bad arguments exit 2"                    '[ $rc -eq 2 ]'
 check "--help prints the usage"                 'bash "$E" --help | grep >/dev/null "^#   eval-candidates.sh --since"'
 out="$(EC --since 2099-01-01 --repo empty/repo)"; rc=$?
 check "no PRs: header only, exit 0"             '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" -eq 1 ]'
+EVI="$TMP/evinbox/inbox"; EVR="$TMP/evals/reports/x.md"
+ei=$(ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" add --kind decide --priority P2 --link "$EVR" --title "Eval draft" < <(pw x))
+ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" add --kind decide --link "$EVR" --title "Eval draft" < <(pw x) >/dev/null
+PATH="$TMP/evalbin:$PATH" ROSALBITO_INBOX="$EVI" ROSALBITO_GH_LOGIN=pedro bash "$S/inbox.sh" refresh >/dev/null
+check "an item linked to the report survives refresh and re-adds" '[ -f "$EVI/$ei.md" ] && [ "$(ls "$EVI" | wc -l | tr -d " ")" -eq 1 ]'
+ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" close "$ei" dropped >/dev/null
+check "a dropped eval item leaves the inbox"    '[ ! -f "$EVI/$ei.md" ] && grep >/dev/null "^outcome: dropped$" "$TMP/evinbox/archive/$ei.md" && grep >/dev/null "^status: dropped$" "$TMP/evinbox/archive/$ei.md"'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
