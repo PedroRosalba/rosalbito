@@ -693,6 +693,9 @@ check "an unknown flag exits non-zero"          '! EC --since 2026-10-01 --repo 
 check "bad arguments never reach gh"            '[ ! -s "$EVFIX/calls" ]'
 EC 2>/dev/null; rc=$?
 check "bad arguments exit 2"                    '[ $rc -eq 2 ]'
+check "--help prints the usage"                 'bash "$E" --help | grep >/dev/null "^#   eval-candidates.sh --since"'
+out="$(EC --since 2099-01-01 --repo empty/repo)"; rc=$?
+check "no PRs: header only, exit 0"             '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" -eq 1 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
