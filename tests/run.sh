@@ -640,6 +640,8 @@ out="$(EC --since 2026-10-01 --repo b/b)"
 check "a keyword in an HTML comment earns nothing" '[ "$(row 1 | cut -f1)" = 798 ]'
 check "stripping a comment keeps a real keyword" '[ "$(row 2 | cut -f1)" = 998 ]'
 check "not / n't before a keyword earns nothing" '[ "$(row 3 | cut -f1)" = 798 ] && [ "$(row 4 | cut -f1)" = 798 ]'
+check "**Fixes** #8 earns the bonus"            '[ "$(row 5 | cut -f1)" = 998 ]'
+check "a real keyword beside a negated one counts" '[ "$(row 6 | cut -f1)" = 998 ] && [ "$(row 7 | cut -f1)" = 998 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
