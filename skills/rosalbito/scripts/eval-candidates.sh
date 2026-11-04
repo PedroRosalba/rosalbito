@@ -75,3 +75,12 @@ built_keys() {
 BUILT="$(built_keys)"
 is_built() { case $'\n'"$BUILT"$'\n' in *$'\n'"$1"$'\n'*) return 0 ;; esac; return 1; }
 
+if [ -n "$CHECK" ]; then
+  [ -z "$SINCE$AUTHOR" ] && [ ${#REPOS[@]} -eq 0 ] || bad "--built takes no other flags"
+  key="$(pr_key "$CHECK")"
+  [ -n "$key" ] || bad "not a GitHub PR URL: '$CHECK'"
+  is_built "$key"; exit $?
+fi
+
+[[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || bad "$USAGE"
+[ ${#REPOS[@]} -gt 0 ] || [ -n "$AUTHOR" ] || bad "$USAGE"
