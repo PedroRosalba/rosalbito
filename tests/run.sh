@@ -560,6 +560,8 @@ check "row has all seven columns in order"      '[ "$(row 3)" = "$(printf "820\t
 check "merged PRs since the date are searched"  'grep -- "^search prs --repo o/r --merged --merged-at >=2026-10-01 " "$EVFIX/calls" >/dev/null'
 check "docs-only excluded"                      '[ -z "$(row 5)" ]'
 check "docs do not count as code"               '[ -z "$(row 6)" ]'
+check "test-only excluded"                      '[ -z "$(row 7)" ]'
+check "code without tests excluded"             '[ -z "$(row 8)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
