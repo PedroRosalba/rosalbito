@@ -580,6 +580,13 @@ out="$(EC --since 2026-10-01 --repo other/r)"
 check "a different owner is not built"          '[ -n "$(row 14)" ]'
 : > "$EVFIX/calls"; EC --since 2026-10-01 --author somebody >/dev/null; rc=$?
 check "--author alone searches every repo"      '[ $rc -eq 0 ] && grep -- "^search prs --merged" "$EVFIX/calls" | grep -- "--author somebody" >/dev/null && ! grep -- "--repo" "$EVFIX/calls" >/dev/null'
+evpr t/b 1 "Tie" "" src/a.rs:1 tests/a.rs:1
+evpr t/a 10 "Tie" "" src/a.rs:1 tests/a.rs:1
+evpr t/a 9 "Tie" "" src/a.rs:1 tests/a.rs:1
+out="$(EC --since 2026-10-01 --repo t/b --repo t/a --repo t/a)"
+check "ties sort by repo, then number; no dupes" '[ "$(col 2 | tr -d " ")$(col 3)" = "t/at/at/b9 10 1 " ]'
+EVDIR="$TMP/no-such-dir" EC --since 2026-10-01 --repo o/r > "$TMP/evout"; rc=$?
+check "a missing evals dir excludes nothing"    '[ $rc -eq 0 ] && grep >/dev/null "/pull/14$" "$TMP/evout"'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
