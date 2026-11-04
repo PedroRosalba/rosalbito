@@ -162,3 +162,9 @@ order:
   PR URL as a line in `dropped.txt`, and commit, so no later patrol proposes it again. Then
   `inbox.sh close <id> dropped`: the item's link is a local path, so `refresh` can never close it.
 
+## Reporting
+
+Neither a patrol nor `/rosalbito eval` creates a run, so the chat report is the record: patrol
+step 8, or the closing message of `/rosalbito eval`. Failures go there, not in the patrol report
+written earlier. It counts drafts built, drafts skipped and why, and any failure, including a
+failed search.
