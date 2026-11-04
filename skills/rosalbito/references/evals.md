@@ -153,3 +153,12 @@ order:
 6. What wasn't run.
 7. Absolute paths (task, validation, report) and the source PR URL.
 
+## After Pedro answers
+
+- **Keep**: `inbox.sh close <id> answered`. Publishing is a separate OK.
+- **Fix**: change the draft, re-validate, commit, and re-present with the same `inbox.sh add`
+  (same `--link`), which updates the open item.
+- **Drop**: in `<evals_dir>`, `git rm -r tasks/<name> validation/<name> reports/<name>.md`, add the
+  PR URL as a line in `dropped.txt`, and commit, so no later patrol proposes it again. Then
+  `inbox.sh close <id> dropped`: the item's link is a local path, so `refresh` can never close it.
+
