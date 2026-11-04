@@ -122,3 +122,26 @@ file_kind() {
 # appends "repo, number, url, closes-an-issue, title" rows to PRS. The title goes last and has
 # its tabs and newlines removed, so it can't shift a column.
 PRS=""
+collect() {
+  local json n rows
+  json="$(gh search prs "$@" --merged --merged-at ">=$SINCE" --limit "$SEARCH_LIMIT" \
+    --json number,title,url,body,repository ${AUTHOR:+--author "$AUTHOR"} </dev/null)" \
+    || die "gh search prs failed"
+  jq -e 'type == "array"' <<<"$json" >/dev/null 2>&1 || die "gh search prs did not return a JSON list"
+  n="$(jq length <<<"$json")"
+  [ "$n" -lt "$SEARCH_LIMIT" ] || echo "rosalbito: warning: search stopped at $n results ($*), use a later --since" >&2
+  rows="$(jq -r --arg re "$ISSUE_RE" '.[] | [.repository.nameWithOwner, (.number | tostring), .url,
+      (if any((.body // "") | gsub("<!--[\\s\\S]*?(?:-->|\\z)"; "") | match($re; "gi"); .captures[0].string == null)
+       then "1" else "0" end),
+      ((.title // "") | gsub("[\\t\\r\\n]+"; " "))] | join("\t")' <<<"$json")" \
+    || die "could not read the gh search prs output"
+  [ -z "$rows" ] || PRS+="$rows"$'\n'
+}
+if [ ${#REPOS[@]} -gt 0 ]; then
+  for r in "${REPOS[@]}"; do collect --repo "$r"; done
+else
+  collect
+fi
+
+TOTAL="$(printf '%s' "$PRS" | grep -c .)"
+OUT="" seen=0
