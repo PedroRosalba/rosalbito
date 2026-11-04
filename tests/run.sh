@@ -599,6 +599,10 @@ TESTS=(a_test.py a-test.js a.test.ts a.spec.ts a_spec.rb test_a.py TEST_A.PY src
 check "every test path and name counts as a test" '[ "$(evlist k/tests src/a.rs:1 "${TESTS[@]}")" = "$(sorted "${TESTS[@]}")" ]'
 NOTTESTS=(src/latest.js contest.py src/attest.rs README.rst config.yaml Cargo.toml package.json .github/workflows/ci.yml .github/workflows/test_x.yml docs/test_a.py tests/README.md)
 check "lookalikes, CI and config are not tests"  '[ -z "$(evlist k/nottests src/a.rs:1 "${NOTTESTS[@]}")" ]'
+CODES=(a.rs a.c a.cc a.cpp a.cxx a.c++ a.h a.hpp a.ts a.tsx a.js a.jsx a.mjs a.cjs a.py a.go a.java a.kt a.rb a.php a.swift a.zig A.PY)
+check "every source extension counts as code"    '[ "$(evlist k/codes tests/a.rs:1 "${CODES[@]}")" = "$(sorted "${CODES[@]}")" ]'
+NOTCODES=(README.rst config.yaml data.json Cargo.toml .github/workflows/ci.yml run.sh Makefile a.css src/FooTest.java)
+check "other files and tests are not code"       '[ -z "$(evlist k/notcodes tests/a.rs:1 "${NOTCODES[@]}")" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
