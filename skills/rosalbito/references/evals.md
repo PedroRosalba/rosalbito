@@ -126,3 +126,30 @@ agent can run the task. An agent smoke run stays Pedro's call, because it costs 
   item about the machine (inbox.md, "Not inbox items").
 - Run heavy builds at low priority (`nice`, `CARGO_BUILD_JOBS=2`).
 
+## 4. Commit, then hand off
+
+Write `reports/<name>.md`, then commit the draft with `validation/<name>/results.tsv` included, so
+the repo is clean for the next draft. Only then add one `decide` item per draft, P2. Nothing else
+goes in the inbox for it.
+
+```bash
+bash SKILL_DIR/scripts/inbox.sh add --kind decide --priority P2 --repo <owner/name> \
+  --link <abs path to reports/<name>.md> --source <same path> \
+  --title "Eval draft: <owner/name>#<number>" <<'EOF_ITEM'
+<body>
+EOF_ITEM
+```
+
+Titles start `Eval draft:`. `--link` is the report path, never the PR URL: `inbox.sh refresh`
+archives an item whose linked GitHub thread is closed, and this PR is already merged. The body, in
+order:
+
+1. The required `## In plain words` section (inbox.md).
+2. The question "Keep, fix or drop this eval?", the recommendation and why, and what Keep does:
+   it closes the item, the draft stays on the eval repo's local `main`, and nothing is published.
+3. The prompt text, verbatim.
+4. The validation table, with grader validated and image validated each as run or not run.
+5. The grader decisions that need Pedro's judgment.
+6. What wasn't run.
+7. Absolute paths (task, validation, report) and the source PR URL.
+
