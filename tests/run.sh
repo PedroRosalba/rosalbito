@@ -683,6 +683,9 @@ check "gh output that is not JSON is a failure" '[ $rc -ne 0 ] && [ -z "$out" ]'
 evpr u/v 1 "Files fail" "" src/a.rs:1 tests/a.rs:1; rm "$(evfile u/v 1)"
 out="$(EC --since 2026-10-01 --repo u/v 2>"$TMP/everr")"; rc=$?
 check "failure fetching files exits non-zero"   '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "pull/1" "$TMP/everr"'
+: > "$EVFIX/calls"
+check "no arguments exit non-zero"              '! EC >/dev/null 2>&1'
+check "--since alone exits non-zero"            '! EC --since 2026-10-01 >/dev/null 2>&1'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
