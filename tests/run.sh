@@ -576,6 +576,10 @@ check "issue bonus beats a smaller PR"          '[ "$(row 3 | cut -f1)" -gt "$(r
 check "a # without a closing keyword: no bonus" '[ "$(row 4 | cut -f1)" = 600 ]'
 check "tabs and newlines in a title are safe"   '[ "$(row 15 | awk -F"\t" "{print NF}")" = 7 ] && [ "$(row 15 | cut -f6)" = "Fix tabbed title" ] && [ "$(row 15 | cut -f7)" = https://github.com/o/r/pull/15 ]'
 check "files are paginated"                     '[ -z "$(row 16)" ]'
+out="$(EC --since 2026-10-01 --repo other/r)"
+check "a different owner is not built"          '[ -n "$(row 14)" ]'
+: > "$EVFIX/calls"; EC --since 2026-10-01 --author somebody >/dev/null; rc=$?
+check "--author alone searches every repo"      '[ $rc -eq 0 ] && grep -- "^search prs --merged" "$EVFIX/calls" | grep -- "--author somebody" >/dev/null && ! grep -- "--repo" "$EVFIX/calls" >/dev/null'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
