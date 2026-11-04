@@ -705,6 +705,9 @@ ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" close "$ei" dropped >/dev/null
 check "a dropped eval item leaves the inbox"    '[ ! -f "$EVI/$ei.md" ] && grep >/dev/null "^outcome: dropped$" "$TMP/evinbox/archive/$ei.md" && grep >/dev/null "^status: dropped$" "$TMP/evinbox/archive/$ei.md"'
 check "the protocol never links the merged PR"  'grep >/dev/null -- "--link <abs path to reports" "$SKILL_DIR/references/evals.md"'
 check "patrol: eval drafts, then the chat report" 'grep >/dev/null "^7\. \*\*Eval drafts" "$SKILL_DIR/references/oss.md" && grep >/dev/null "^8\. \*\*Report" "$SKILL_DIR/references/oss.md"'
+check "inbox points at the eval answer section" 'grep >/dev/null "§After Pedro answers" "$SKILL_DIR/references/inbox.md" && grep >/dev/null "^## After Pedro answers" "$SKILL_DIR/references/evals.md"'
+unset EVFIX
+
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
