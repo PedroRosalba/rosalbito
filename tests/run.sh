@@ -562,6 +562,8 @@ check "docs-only excluded"                      '[ -z "$(row 5)" ]'
 check "docs do not count as code"               '[ -z "$(row 6)" ]'
 check "test-only excluded"                      '[ -z "$(row 7)" ]'
 check "code without tests excluded"             '[ -z "$(row 8)" ]'
+check "over max_additions excluded"             '[ -z "$(row 9)" ]'
+check "over max_files excluded"                 '[ -z "$(row 10)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
