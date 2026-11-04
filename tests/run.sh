@@ -574,6 +574,8 @@ check "a quoted source_pr key is read"          '[ -z "$(row 18)" ]'
 check "an untidy source_pr URL still matches"   '[ -z "$(row 19)" ]'
 check "issue bonus beats a smaller PR"          '[ "$(row 3 | cut -f1)" -gt "$(row 140 | cut -f1)" ] && [ "$(row 3 | cut -f4)" -gt "$(row 140 | cut -f4)" ]'
 check "a # without a closing keyword: no bonus" '[ "$(row 4 | cut -f1)" = 600 ]'
+check "tabs and newlines in a title are safe"   '[ "$(row 15 | awk -F"\t" "{print NF}")" = 7 ] && [ "$(row 15 | cut -f6)" = "Fix tabbed title" ] && [ "$(row 15 | cut -f7)" = https://github.com/o/r/pull/15 ]'
+check "files are paginated"                     '[ -z "$(row 16)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
