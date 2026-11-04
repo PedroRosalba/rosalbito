@@ -145,3 +145,31 @@ fi
 
 TOTAL="$(printf '%s' "$PRS" | grep -c .)"
 OUT="" seen=0
+while IFS=$'\t' read -r repo number url closes title; do
+  [ -n "$repo" ] || continue
+  seen=$((seen+1))
+  [ $((seen % PROGRESS_EVERY)) -ne 0 ] || echo "rosalbito: checked $seen of $TOTAL PRs" >&2
+  is_built "$(pr_key "$url")" && continue
+  files="$(gh api --paginate "repos/$repo/pulls/$number/files?per_page=100" \
+    --jq '.[] | [.additions, .deletions, .status, (.filename | ascii_downcase), .filename] | @tsv' </dev/null)" \
+    || die "gh api failed for the files of $url"
+  additions=0 changed=0 count=0 code=0 tests=0
+  while IFS=$'\t' read -r added deleted status lower path; do
+    [ -n "$path" ] || continue
+    [ $((added+deleted)) -gt 0 ] || continue    # a pure rename or mode change
+    file_kind "$lower" "$path"
+    [ "$KIND" != other ] || continue
+    additions=$((additions+added)); changed=$((changed+added+deleted)); count=$((count+1))
+    [ "$status" != removed ] || continue    # part of the diff, but it doesn't qualify the PR
+    case "$KIND" in code) code=$((code+1)) ;; test) tests=$((tests+1)) ;; esac
+  done <<<"$files"
+  [ "$code" -gt 0 ] && [ "$tests" -gt 0 ] || continue
+  [ "$changed" -le "$MAX_ADD" ] && [ "$count" -le "$MAX_FILES" ] || continue
+  score=$((MAX_ADD - changed + closes * ISSUE_BONUS))
+  printf -v row '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$score" "$repo" "$number" "$additions" "$count" "$title" "$url"
+  OUT+="$row"
+done <<<"$PRS"
+
+printf 'score\trepo\tnumber\tadditions\tfiles\ttitle\turl\n'
+# -u: a repo passed twice lists its PRs twice
+[ -z "$OUT" ] || printf '%s' "$OUT" | LC_ALL=C sort -u -t $'\t' -k1,1nr -k2,2 -k3,3n
