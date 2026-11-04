@@ -688,6 +688,8 @@ check "no arguments exit non-zero"              '! EC >/dev/null 2>&1'
 check "--since alone exits non-zero"            '! EC --since 2026-10-01 >/dev/null 2>&1'
 check "--repo without --since exits non-zero"   '! EC --repo o/r >/dev/null 2>&1'
 check "a malformed date exits non-zero"         '! EC --since 10/01/2026 --repo o/r >/dev/null 2>&1'
+check "a flag without a value exits non-zero"   '! EC --repo o/r --since >/dev/null 2>&1'
+check "an unknown flag exits non-zero"          '! EC --since 2026-10-01 --repo o/r --bogus x >/dev/null 2>&1'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
