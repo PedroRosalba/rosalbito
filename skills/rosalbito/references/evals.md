@@ -116,3 +116,13 @@ than the first is reported as not validated, naming what wasn't run.
 A task isn't a finished example until it is image validated. The two levels don't prove a real
 agent can run the task. An agent smoke run stays Pedro's call, because it costs money.
 
+## Hard limits
+
+- Never run paid agents (claude-code, codex, or Rosalbito against a task) from a patrol or from
+  `/rosalbito eval`.
+- Never push or publish `<evals_dir>`.
+- Check `df -h <evals_dir>` before building. If free disk is under twice the build's size, or a
+  machine limit blocks a draft, record it in the chat report and skip the draft, with no inbox
+  item about the machine (inbox.md, "Not inbox items").
+- Run heavy builds at low priority (`nice`, `CARGO_BUILD_JOBS=2`).
+
