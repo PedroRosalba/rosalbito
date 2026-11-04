@@ -94,3 +94,31 @@ MAX_FILES="$(yaml_scalar "$CFG" max_files)";   MAX_FILES="${MAX_FILES:-12}"
 [[ "$MAX_ADD$MAX_FILES" =~ ^[0-9]+$ ]] || die "max_additions and max_files in $CFG must be numbers"
 
 # file_kind <lower-cased path> <path>: sets KIND to code, test or other.
+# Docs and lockfiles come first: tests/README.md is not a test. So does .github/:
+# .github/workflows/test_x.yml is CI, not a test.
+file_kind() {
+  local path="/$1" base="${1##*/}" exact="${2##*/}"
+  KIND=other
+  case "$base" in
+    cargo.lock|pnpm-lock.yaml|package-lock.json|npm-shrinkwrap.json|yarn.lock|bun.lock|bun.lockb|\
+    poetry.lock|uv.lock|gemfile.lock|composer.lock|flake.lock|go.sum) return ;;
+    *.md|*.mdx|changelog*) return ;;
+  esac
+  case "$path" in
+    */docs/*|*/.changeset/*|*/.github/*) return ;;
+    */test/*|*/tests/*|*/__tests__/*|*/testdata/*|*/spec/*|*/specs/*|*/e2e/*|*/__snapshots__/*|*/fixtures/*)
+      KIND=test; return ;;
+  esac
+  case "$base" in
+    *_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|test_*|tests.rs|conftest.py|*.snap) KIND=test; return ;;
+  esac
+  case "$exact" in *Test.*|*Tests.*) KIND=test; return ;; esac
+  case "$base" in
+    *.rs|*.c|*.cc|*.cpp|*.cxx|*.c++|*.h|*.hpp|*.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.py|*.go|\
+    *.java|*.kt|*.rb|*.php|*.swift|*.zig) KIND=code ;;
+  esac
+}
+
+# appends "repo, number, url, closes-an-issue, title" rows to PRS. The title goes last and has
+# its tabs and newlines removed, so it can't shift a column.
+PRS=""
