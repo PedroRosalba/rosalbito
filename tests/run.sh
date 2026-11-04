@@ -628,6 +628,16 @@ check "removed docs still count for nothing"    '[ "$(row 8 | cut -f1)" = 798 ]'
 check "a 0/0 rename doesn't qualify a PR"       '[ -z "$(row 9)" ] && [ -z "$(row 10)" ]'
 check "a mode-only change doesn't qualify a PR" '[ -z "$(row 11)" ] && [ -z "$(row 12)" ]'
 check "a 0/0 file doesn't count for the row"    '[ "$(row 13 | cut -f1,4,5)" = "$(printf "798\t2\t2")" ]'
+check "a rename with edits still qualifies"     '[ "$(row 14 | cut -f1,4,5)" = "$(printf "796\t2\t2")" ]'
+BODY=$'<!-- Fixes #1 -->\r\nNothing to see.'; evpr b/b 1 "Comment only" "$BODY" src/a.rs:1 tests/a.rs:1
+BODY=$'<!-- template\nCloses #1\n-->\nCloses #2'; evpr b/b 2 "Comment, then a real one" "$BODY" src/a.rs:1 tests/a.rs:1
+evpr b/b 3 "Negated" "This does not fix #1" src/a.rs:1 tests/a.rs:1
+evpr b/b 4 "Contraction" "This doesn't close #1" src/a.rs:1 tests/a.rs:1
+evpr b/b 5 "Bold" "**Fixes** #8" src/a.rs:1 tests/a.rs:1
+evpr b/b 6 "Negated, then real" "Doesn't fix #1 but fixes #2" src/a.rs:1 tests/a.rs:1
+evpr b/b 7 "Word starting with not" "Notably fixes #2" src/a.rs:1 tests/a.rs:1
+out="$(EC --since 2026-10-01 --repo b/b)"
+check "a keyword in an HTML comment earns nothing" '[ "$(row 1 | cut -f1)" = 798 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
