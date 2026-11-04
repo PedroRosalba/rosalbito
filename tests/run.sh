@@ -642,6 +642,15 @@ check "stripping a comment keeps a real keyword" '[ "$(row 2 | cut -f1)" = 998 ]
 check "not / n't before a keyword earns nothing" '[ "$(row 3 | cut -f1)" = 798 ] && [ "$(row 4 | cut -f1)" = 798 ]'
 check "**Fixes** #8 earns the bonus"            '[ "$(row 5 | cut -f1)" = 998 ]'
 check "a real keyword beside a negated one counts" '[ "$(row 6 | cut -f1)" = 998 ] && [ "$(row 7 | cut -f1)" = 998 ]'
+: > "$EVFIX/calls"
+for u in https://github.com/o/r/pull/14 http://github.com/o/r/pull/14 github.com/o/r/pull/14 HTTPS://GitHub.com/O/R/PULL/14 \
+  https://github.com/o/r/pull/14/ https://github.com/o/r/pull/14/files "https://github.com/o/r/pull/14#issuecomment-1" \
+  "https://github.com/o/r/pull/14?w=1" https://github.com/o/r/pull/17 https://github.com/o/r/pull/18 https://github.com/o/r/pull/19; do
+  EC --built "$u" || fail "--built should find $u"
+done
+check "--built finds every form of a built or dropped URL" '[ ! -s "$EVFIX/calls" ]'
+EC --built https://github.com/o/r/pull/1; rc=$?
+check "--built exits 1 for a PR not built"      '[ $rc -eq 1 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
