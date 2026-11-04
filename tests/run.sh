@@ -624,6 +624,8 @@ check "removed code doesn't qualify a PR"       '[ -z "$(row 3)" ]'
 check "deletions count towards max_additions"   '[ -z "$(row 4)" ] && [ -z "$(row 5)" ]'
 check "deletions lower the score, not additions" '[ "$(row 6 | cut -f1,4)" = "$(printf "498\t2")" ]'
 check "removed code still counts in the diff"   '[ "$(row 7 | cut -f1,4,5)" = "$(printf "708\t2\t3")" ]'
+check "removed docs still count for nothing"    '[ "$(row 8 | cut -f1)" = 798 ]'
+check "a 0/0 rename doesn't qualify a PR"       '[ -z "$(row 9)" ] && [ -z "$(row 10)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
