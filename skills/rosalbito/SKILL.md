@@ -45,6 +45,7 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 | `/rosalbito grill [topic]` | §Grill mode. |
 | `/rosalbito inbox [sweep]` | read `references/inbox.md`; run its coordinator (or sweep) protocol in this context. An item with `context:` or "Earlier sessions on this thread": read that record first (`references/sessions.md` §Recall). |
 | `/rosalbito patrol [target] [since]` | `oss-detect.sh` (not OSS → say so, stop); read `references/oss.md`; run §patrol. |
+| `/rosalbito eval <pr-url \| --since date>` | read `references/evals.md`; run it. |
 | `/rosalbito save [title]`, or Pedro says he's closing the session ("imma close this", "wrap up", "that's it for today") | read `references/sessions.md`; run §Save before replying. |
 | `/rosalbito <task>` | §1 Classify. |
 | no args, no run | ask for the task in one line; stop. |
