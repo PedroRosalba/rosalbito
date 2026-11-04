@@ -655,6 +655,10 @@ EC --built https://github.com/o/r/pull/140; rc=$?
 check "--built does not match a prefix"         '[ $rc -eq 1 ]'
 EC --built https://github.com/o/other/pull/14; rc=$?
 check "--built keeps the repo name in the key"  '[ $rc -eq 1 ]'
+EC --built https://github.com/other/r/pull/14; rc=$?
+check "--built keeps the owner in the key"      '[ $rc -eq 1 ]'
+EVDIR="$TMP/no-such-dir" EC --built https://github.com/o/r/pull/14; rc=$?
+check "--built with no evals dir: not built"    '[ $rc -eq 1 ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
