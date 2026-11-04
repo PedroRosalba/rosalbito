@@ -104,6 +104,7 @@ Runs in **this** context (Pedro is interacting). Read-only until Pedro approves 
    verify what landed matches, then `inbox.sh posted <id> <every url created>` and
    `set <id> outcome approved-as-is|edited`. A `decide`/`read` answered → `close <id> answered|read`. Edits → apply, show the final text again, wait for OK. "later" →
    leave it. "drop" → `set <id> status dropped`. An approval covers that item only.
+   A `decide` item titled `Eval draft: ...` follows `references/evals.md` §After Pedro answers.
 5. **Close.** Print what was posted (links), what moved to the outbox, and what remains.
 
 Outside a session, `refresh` can run on a timer so the Obsidian views stay current; nothing
