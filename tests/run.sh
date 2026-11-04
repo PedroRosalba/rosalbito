@@ -620,6 +620,8 @@ evpr c/c 14 "A rename with edits counts" "" src/a.rs:1:1:renamed tests/a.rs:1:1:
 out="$(EC --since 2026-10-01 --repo c/c)"
 check "other files don't count towards the limits" '[ "$(row 1 | cut -f1,4,5)" = "$(printf "798\t2\t2")" ]'
 check "a removed test doesn't qualify a PR"     '[ -z "$(row 2)" ]'
+check "removed code doesn't qualify a PR"       '[ -z "$(row 3)" ]'
+check "deletions count towards max_additions"   '[ -z "$(row 4)" ] && [ -z "$(row 5)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
