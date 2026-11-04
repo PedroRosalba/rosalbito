@@ -667,6 +667,12 @@ EC --since 2026-10-01 --repo 'cloudflare/*' 2>"$TMP/everr"; rc=$?
 check "a * in --repo exits 2 with a clear message" '[ $rc -eq 2 ] && grep >/dev/null "not a pattern" "$TMP/everr" && [ ! -s "$EVFIX/calls" ]'
 EC --repo o/r --repo '*/x' 2>/dev/null; rc=$?
 check "a * in any --repo exits 2 before anything else" '[ $rc -eq 2 ]'
+for ((i=1;i<=30;i++)); do evpr p/q "$i" "Progress" "" src/a.rs:1 tests/a.rs:1; done
+out="$(EC --since 2026-10-01 --repo p/q 2>"$TMP/everr")"; rc=$?
+check "progress on stderr every 25 PRs"         '[ $rc -eq 0 ] && [ "$(cat "$TMP/everr")" = "rosalbito: checked 25 of 30 PRs" ] && [ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" -eq 31 ]'
+mkdir -p .agent/context && printf 'evals_dir: %s\nmax_additions: 20\nmax_files: 2\n' "$TMP/evals" > .agent/context/evals.yaml
+out="$(PATH="$TMP/evalbin:$PATH" bash "$E" --since 2026-10-01 --repo o/r)"
+check "limits and evals_dir come from the config" '[ "$(col 3)" = "140 1 12 " ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
