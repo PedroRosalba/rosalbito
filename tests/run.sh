@@ -568,6 +568,8 @@ check "exactly at both limits stays, score 0"   '[ "$(row 11 | cut -f1,4,5)" = "
 check "lockfiles ignored for the size limit"    '[ "$(row 12 | cut -f1,4,5)" = "$(printf "780\t20\t2")" ]'
 check "a lockfile is not code"                  '[ -z "$(row 13)" ]'
 check "already built excluded via source_pr"    '[ -z "$(row 14)" ]'
+check "source_pr match is exact, not a prefix"  '[ -n "$(row 140)" ] && [ -n "$(row 1)" ]'
+check "a PR in dropped.txt is excluded"         '[ -z "$(row 17)" ]'
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'
