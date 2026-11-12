@@ -13,8 +13,8 @@ iteration: 1
 started_at: __STARTED_AT__
 updated_at: __STARTED_AT__
 driver: none
-acceptance: .agent/acceptance/__RUN_ID__.yaml
-evidence: .agent/evidence/__RUN_ID__.jsonl
+acceptance: .agent/runs/__RUN_ID__/acceptance.yaml
+evidence: .agent/runs/__RUN_ID__/evidence.jsonl
 pr: ""
 next_action: "Classify the task (risk tier, path floor, human routing) and write the plan."
 ---
@@ -22,7 +22,8 @@ next_action: "Classify the task (risk tier, path floor, human routing) and write
 # Rosalbito run __RUN_ID__
 
 > Resume protocol: a fresh agent reads this file first, runs `caps-check.sh`, and continues
-> from `next_action`. Keep every section truthful. Never promote a guess to a fact.
+> from `next_action`. Durable knowledge lives in `.agent/context/`; this file is run state only.
+> Keep every section truthful. Never promote a guess to a fact.
 
 ## Task
 

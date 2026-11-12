@@ -27,11 +27,17 @@ fi
 
 if ! $installed; then
   echo "warning: ralph-loop plugin not installed/enabled — no loop driver. The run continues in this session only;" >&2
-  echo "         resume later with /rosalbito (reads .agent/state/current.md). Install: /plugin install ralph-loop@claude-plugins-official" >&2
+  echo "         resume later with /rosalbito (reads .agent/runs/current/state.md). Install: /plugin install ralph-loop@claude-plugins-official" >&2
   bash "$SKILL_DIR/scripts/state.sh" set driver none
   exit 0
 fi
 
+# the plugin's Stop hook reads .claude/ralph-loop.local.md relative to the SESSION's directory;
+# a run in another repo than the one Claude Code was started in will never re-enter.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ "$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)" != "$(cd "$ROOT" && pwd -P)" ]; then
+  echo "warning: session project dir ($CLAUDE_PROJECT_DIR) != repo root ($ROOT): the Stop hook will not re-enter this run." >&2
+  echo "         Start Claude Code inside the target repo for overnight runs." >&2
+fi
 mkdir -p "$ROOT/.claude"
 STATE_LOCAL="$ROOT/.claude/ralph-loop.local.md"
 if [ -f "$STATE_LOCAL" ]; then
@@ -49,7 +55,7 @@ started_at: "$(now_iso)"
 
 Continue the Rosalbito run $RUN_ID in this repository.
 
-1. Read .agent/state/current.md first. It is the only source of truth about this run.
+1. Read .agent/runs/current/state.md first. It is the only source of truth about this run. Durable repo knowledge is in .agent/context/.
 2. Run \`bash SKILL_DIR/scripts/caps-check.sh\` (SKILL_DIR = the rosalbito skill directory). If it exits non-zero, write the blocked report and finish the run as blocked.
 3. Continue from \`next_action\`. Record every check through verify.sh. Keep current.md truthful: status, next_action, log.
 4. When the run reaches status done or blocked (finish-run.sh has been called and the final report printed), output exactly: <promise>$PROMISE</promise>

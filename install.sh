@@ -8,12 +8,15 @@ SETTINGS="$HOME/.claude/settings.json"
 HOOK="$HERE/skill/hooks/rosalbito-guard.sh"
 
 mkdir -p "$SKILLS"
-if [ -L "$SKILLS/rosalbito" ] || [ ! -e "$SKILLS/rosalbito" ]; then
-  ln -sfn "$HERE/skill" "$SKILLS/rosalbito"
-  echo "linked $SKILLS/rosalbito -> $HERE/skill"
-else
-  echo "warning: $SKILLS/rosalbito exists and is not a symlink; leaving it alone" >&2
-fi
+link_skill() {  # link_skill <name> <source dir>
+  if [ -L "$SKILLS/$1" ] || [ ! -e "$SKILLS/$1" ]; then
+    ln -sfn "$2" "$SKILLS/$1"; echo "linked $SKILLS/$1 -> $2"
+  else
+    echo "warning: $SKILLS/$1 exists and is not a symlink; leaving it alone" >&2
+  fi
+}
+link_skill rosalbito "$HERE/skill"
+link_skill telemetry "$HERE/skills/telemetry"
 
 command -v jq >/dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
@@ -29,5 +32,6 @@ else
   echo "registered PreToolUse hook: $HOOK (backup kept next to settings.json)"
 fi
 echo
-echo "Restart Claude Code to load the skill and the hook. Then: /rosalbito <task>"
+echo "Restart Claude Code to load the skills and the hook. Then: /rosalbito <task>"
+echo "Recommended primitives: /plugin install mattpocock-skills@claude-plugins-official (grilling, domain-modeling, diagnosing-bugs, research)"
 echo "Optional driver: /plugin install ralph-loop@claude-plugins-official (see docs/driver-decision.md)"

@@ -5,7 +5,7 @@
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 [ -f "$STATE_FILE" ] || die "no run"
-EV="$AGENT_DIR/evidence/$(state_get run_id).jsonl"
+EV="$EVIDENCE_FILE"
 [ -s "$EV" ] || { echo "no evidence recorded"; exit 0; }
 if [ "${1:-}" = "--md" ]; then
   jq -r 'to_entries | group_by(.value.label) | map(.[-1]) | .[] | "| \(.value.label) | `\(.value.command)` | \(.value.exit) | #\(.key+1) \(.value.ts) |"' <(jq -s '.' "$EV")

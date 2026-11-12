@@ -21,7 +21,9 @@ echo "state / init-run"
 check "state.sh show fails without a run"       '! bash "$S/state.sh" show >/dev/null 2>&1'
 out="$(bash "$S/init-run.sh" --task "Add CI badge to README" --risk low 2>&1)"; rc=$?
 check "init-run exits 0"                        '[ $rc -eq 0 ]'
-check "creates .agent tree"                     '[ -d .agent/state ] && [ -d .agent/evidence ] && [ -d .agent/decisions ]'
+check "creates context + runs tree"             '[ -d .agent/context/adr ] && [ -d .agent/context/telemetry ] && [ -L .agent/runs/current ] && [ -f .agent/runs/current/state.md ]'
+check "LOW run gets no acceptance file"          '[ ! -f .agent/runs/current/acceptance.yaml ]'
+check "CONTEXT.md and docs/adr redirected"       '[ -L CONTEXT.md ] && [ -L docs/adr ] && grep >/dev/null "^CONTEXT.md$" .git/info/exclude && grep >/dev/null "^docs/adr$" .git/info/exclude'
 check "creates feature branch"                  '[ "$(git rev-parse --abbrev-ref HEAD)" = "feature/add-ci-badge-to-readme" ]'
 check "state has run_id"                        '[ -n "$(bash "$S/state.sh" get run_id)" ]'
 check "risk recorded"                           '[ "$(bash "$S/state.sh" get risk)" = "LOW" ]'
@@ -35,9 +37,10 @@ check "set handles special chars"               '[ "$(bash "$S/state.sh" get nex
 bash "$S/state.sh" bump >/dev/null
 check "bump increments iteration"               '[ "$(bash "$S/state.sh" get iteration)" = "2" ]'
 bash "$S/state.sh" log "hello log"
-check "log appends"                             'grep >/dev/null "hello log" .agent/state/current.md'
-check "frontmatter still well-formed"           '[ "$(grep -c "^---$" .agent/state/current.md)" -eq 2 ]'
+check "log appends"                             'grep >/dev/null "hello log" .agent/runs/current/state.md'
+check "frontmatter still well-formed"           '[ "$(grep -c "^---$" .agent/runs/current/state.md)" -eq 2 ]'
 check "driver state file excluded from git"     'grep >/dev/null ".claude/\*.local.md" .git/info/exclude'
+check ".agent/ excluded from git by default"    'grep >/dev/null "^.agent/$" .git/info/exclude && [ -z "$(git status --porcelain | grep .agent)" ]'
 
 echo "verify / evidence"
 RUN="$(bash "$S/state.sh" get run_id)"
@@ -45,8 +48,8 @@ bash "$S/verify.sh" echo-ok 'echo fine' >/dev/null; rc=$?
 check "verify passes through exit 0"            '[ $rc -eq 0 ]'
 bash "$S/verify.sh" boom 'echo bad >&2; exit 7' >/dev/null; rc=$?
 check "verify passes through exit 7"            '[ $rc -eq 7 ]'
-check "two evidence lines"                      '[ "$(wc -l < .agent/evidence/$RUN.jsonl | tr -d " ")" -eq 2 ]'
-check "evidence is valid JSON with fields"      'jq -e ".label==\"boom\" and .exit==7 and (.output_tail|contains(\"bad\")) and .iteration==2" <(tail -1 .agent/evidence/$RUN.jsonl) >/dev/null'
+check "two evidence lines"                      '[ "$(wc -l < .agent/runs/$RUN/evidence.jsonl | tr -d " ")" -eq 2 ]'
+check "evidence is valid JSON with fields"      'jq -e ".label==\"boom\" and .exit==7 and (.output_tail|contains(\"bad\")) and .iteration==2" <(tail -1 .agent/runs/$RUN/evidence.jsonl) >/dev/null'
 check "evidence-summary lists both"             '[ "$(bash "$S/evidence-summary.sh" | wc -l | tr -d " ")" -eq 2 ]'
 check "evidence-summary --md rows"              'bash "$S/evidence-summary.sh" --md | grep >/dev/null "^| boom |"'
 
@@ -65,10 +68,10 @@ bash "$S/state.sh" set started_at 2020-01-01T00:00:00Z
 bash "$S/caps-check.sh" >/dev/null; rc=$?
 check "wall clock cap => CAP_HIT (2)"           '[ $rc -eq 2 ]'
 bash "$S/state.sh" set started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-mkdir -p .agent && printf 'max_iterations_per_run: 2\nmax_wall_clock_hours: 8\nmax_same_failure: 3\n' > .agent/caps.yaml
+printf 'max_iterations_per_run: 2\nmax_wall_clock_hours: 8\nmax_same_failure: 3\n' > .agent/context/caps.yaml
 bash "$S/caps-check.sh" >/dev/null; rc=$?
 check "per-repo caps override honored"          '[ $rc -eq 2 ]'
-rm .agent/caps.yaml
+rm .agent/context/caps.yaml
 
 echo "classify-paths"
 check "auth path => HIGH"                       'bash "$S/classify-paths.sh" src/auth/login.rs | grep >/dev/null "MIN_TIER=HIGH"'
@@ -80,9 +83,9 @@ check "Dockerfile => HIGH"                      'bash "$S/classify-paths.sh" Doc
 check "plain src => TRIVIAL floor"              'bash "$S/classify-paths.sh" src/engine.rs README.md | grep >/dev/null "MIN_TIER=TRIVIAL"'
 check "author.rs does not match auth"           'bash "$S/classify-paths.sh" src/author.rs | grep >/dev/null "MIN_TIER=TRIVIAL"'
 check "diff mode works"                         'echo x > src.txt && git add src.txt && bash "$S/classify-paths.sh" | grep >/dev/null "MIN_TIER="'
-printf 'rules:\n  - match: '"'"'(^|/)engine\\.rs$'"'"'\n    tier: CRITICAL\n    reason: ledger core\n' > .agent/risk-overrides.yaml
+printf 'rules:\n  - match: '"'"'(^|/)engine\\.rs$'"'"'\n    tier: CRITICAL\n    reason: ledger core\n' > .agent/context/risk-overrides.yaml
 check "per-repo override => CRITICAL"           'bash "$S/classify-paths.sh" src/engine.rs | grep >/dev/null "MIN_TIER=CRITICAL"'
-rm .agent/risk-overrides.yaml
+rm .agent/context/risk-overrides.yaml
 
 echo "detect-checks"
 printf '[package]\nname="x"\nversion="0.1.0"\n' > Cargo.toml
@@ -105,9 +108,10 @@ check "metrics line is JSON"                    'bash "$S/metrics.sh" | jq -e ".
 bash "$S/finish-run.sh" done --pr https://example.com/pr/1 >/dev/null; rc=$?
 check "finish-run done"                         '[ $rc -eq 0 ] && [ "$(bash "$S/state.sh" get status)" = "done" ]'
 check "pr recorded"                             '[ "$(bash "$S/state.sh" get pr)" = "https://example.com/pr/1" ]'
-check "metrics.jsonl appended"                  '[ -s .agent/metrics.jsonl ] && jq -e ".status==\"done\"" .agent/metrics.jsonl >/dev/null'
+check "metrics.jsonl appended"                  '[ -s .agent/runs/metrics.jsonl ] && jq -e ".status==\"done\"" .agent/runs/metrics.jsonl >/dev/null'
 check "loop disarmed"                           '[ ! -f .claude/ralph-loop.local.md ]'
-check "new run archives the finished one"       'bash "$S/init-run.sh" --task "second task" --risk trivial >/dev/null 2>&1 && ls .agent/state/history | grep >/dev/null .'
+check "new run re-points current, keeps the old" 'bash "$S/init-run.sh" --task "second task" --risk medium >/dev/null 2>&1 && [ -d .agent/runs/$RUN ] && [ "$(bash "$S/state.sh" get task)" = "second task" ]'
+check "MEDIUM run gets an acceptance file"       '[ -f .agent/runs/current/acceptance.yaml ]'
 
 echo "guard hook"
 g() { printf '{"tool_name":"Bash","tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$1" | jq -Rs .)" "$TMP" | bash "$HOOK" >/dev/null 2>&1; echo $?; }

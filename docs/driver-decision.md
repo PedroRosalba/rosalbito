@@ -39,3 +39,10 @@ ours and the dependency is only on the Stop hook.
   mode: `scripts/driver.sh` wrapping `claude -p` under launchd. Not built until observed.
 - The wall-clock and same-failure caps live in `caps-check.sh` (run at each re-entry), not in
   the plugin.
+- The Stop hook is **cwd-bound**: it reads `.claude/ralph-loop.local.md` relative to the
+  directory Claude Code was started in. Start the session inside the target repo
+  (`start-loop.sh` warns otherwise). Observed in experiment 01.
+- Nested headless launches (`claude -p --dangerously-skip-permissions` from inside another
+  Claude session) are denied by auto mode on real repos ("Create Unsafe Agents"). An
+  overnight run is started by Pedro or a scheduler, never spawned by an agent. Observed in
+  experiment 01.

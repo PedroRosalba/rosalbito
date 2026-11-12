@@ -28,7 +28,7 @@ if [ "$ELAPSED_H" -ge "$MAX_H" ]; then
   echo "CAP_HIT: elapsed ${ELAPSED_H}h >= max_wall_clock_hours $MAX_H"; exit 2
 fi
 
-EV="$AGENT_DIR/evidence/$(state_get run_id).jsonl"
+EV="$EVIDENCE_FILE"
 if [ -s "$EV" ] && command -v jq >/dev/null; then
   # longest current streak of consecutive failures per label (streak resets on a pass)
   loop="$(jq -rs --argjson max "$MAX_SAME" '

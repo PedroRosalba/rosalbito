@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# state.sh — read/write .agent/state/current.md (the resume entry point)
+# state.sh — read/write .agent/runs/current/state.md (the resume entry point)
 #
 #   state.sh show                 print frontmatter + next action (exit 1 if no run)
 #   state.sh get <key>            print a frontmatter scalar
@@ -16,7 +16,7 @@ cmd="${1:-show}"; shift || true
 [ "$cmd" = "path" ] && { echo "$STATE_FILE"; exit 0; }
 
 if [ ! -f "$STATE_FILE" ]; then
-  [ "$cmd" = "show" ] && { echo "no rosalbito run in $ROOT (no .agent/state/current.md)"; exit 1; }
+  [ "$cmd" = "show" ] && { echo "no rosalbito run in $ROOT (no .agent/runs/current/state.md)"; exit 1; }
   die "no run: $STATE_FILE missing (run init-run.sh first)"
 fi
 

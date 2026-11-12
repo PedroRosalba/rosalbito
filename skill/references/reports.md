@@ -14,11 +14,12 @@ Changed: <files / one line>
 Verification: ✓ test (#3) ✓ lint (#4) ✓ build (#5) ✓ review correctness (round 1)
 Important discoveries: <≤3 bullets, only if Pedro must know>
 Tradeoffs / remaining risks: <≤3 bullets or "none">
+Missing capability observed: <a reusable engineering capability this run lacked, or "none">
 PR: <url>
 ```
 
-TRIVIAL/LOW: the PR body paragraph is the report. HIGH+: also `.agent/reports/<run_id>.md`
-from `templates/report.md`.
+TRIVIAL/LOW: the PR body paragraph is the report. HIGH+: also
+`.agent/runs/<run_id>/reports/report.md` from `templates/report.md`.
 
 ## Blocked block
 

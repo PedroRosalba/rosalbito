@@ -1,24 +1,39 @@
-# Persistent state: `.agent/`
+# Persistent state: `.agent/` (internal, never committed)
 
 ```
 .agent/
-  state/current.md        # resume entry point (frontmatter scalars + sections)
-  state/history/<run>.md  # finished runs
-  acceptance/<run>.yaml   # contracts
-  evidence/<run>.jsonl    # verification results (verify.sh)
-  decisions/<n>-<slug>.md # context, options, choice, why
-  reports/<run>.md        # engineering reports; blocked-<run>.md
-  understanding/<run>.md  # dated run artifacts (+ .mmd)
-  metrics.jsonl           # one line per finished run (metrics.sh)
-  invariants.md           # optional, per repo, hand-maintained
-  risk-overrides.yaml     # optional per-repo path floors
-  caps.yaml               # optional per-repo caps
+  context/                   durable — what we know about this repository
+    understanding/<date>-<slug>.md   understanding passes (KNOWN / INFERRED / UNKNOWN)
+    diagrams/*.mmd                   architecture, data flow, trust boundaries (Mermaid)
+    glossary/CONTEXT.md              domain glossary (Matt Pocock domain-modeling format)
+    adr/<n>-<slug>.md                decision records (context, options, choice, why)
+    telemetry/                       instrumentation map, conventions (telemetry skill)
+    invariants.md                    repo invariants handed to reviewers (candidate → confirmed)
+    risk-overrides.yaml, caps.yaml   optional per-repo config overrides
+  runs/                      ephemeral — what happened during each execution
+    current -> <run_id>              symlink to the active (or last) run
+    <run_id>/state.md                resume entry point (frontmatter scalars + sections)
+    <run_id>/acceptance.yaml         contract (MEDIUM+)
+    <run_id>/evidence.jsonl          verification results (verify.sh)
+    <run_id>/reports/                engineering report, blocked report
+    adhoc.jsonl                      evidence recorded outside a run
+    metrics.jsonl                    one line per finished run (metrics.sh)
 ```
 
-Committed on the feature branch by default so the PR carries the audit trail. Set
-`ROSALBITO_COMMIT_AGENT_DIR=0` to keep it local.
+Runs read `context/` and write `runs/`. Durable learnings produced by a run (decisions,
+terms, understanding) go to `context/`, so the next run starts smarter.
 
-## `current.md` frontmatter
+**Never committed.** `init-context.sh` adds `.agent/` to `.git/info/exclude` (not
+`.gitignore`: the target repo is not modified). The PR body carries the evidence table and
+decision summaries; the files stay on the machine for Pedro and the agents.
+`ROSALBITO_COMMIT_AGENT_DIR=1` opts in to committing them.
+
+**Matt Pocock skills redirection.** `grilling` + `domain-modeling` hard-code `CONTEXT.md` at
+the repo root and `docs/adr/`. `init-context.sh` makes both symlinks into `context/` and
+excludes them, so those skills write where we want without knowing it. If the repo already
+has a real `CONTEXT.md` or `docs/adr/`, they are left alone (repo-owned) and reported.
+
+## `state.md` frontmatter
 
 | key | meaning |
 |-----|---------|
@@ -39,10 +54,11 @@ Sections: Task · Classification · Plan · Verified · Failed · Reviews · Ope
 
 ## Resume protocol
 
-1. Read `current.md`. 2. `caps-check.sh`. 3. Continue from `next_action`.
+1. Read `runs/current/state.md`. 2. `caps-check.sh`. 3. `start-loop.sh` (re-arm for this
+session). 4. Continue from `next_action`, re-verifying before advancing.
 A brand-new agent reading only `.agent/` must know: the task, what happened, what remains,
 what is verified, what failed, what was decided. Tested by killing a session mid-run
-(`docs/resume-test.md`).
+(`tests/resume-test.sh`).
 
 ## Evidence line
 
