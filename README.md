@@ -36,7 +36,7 @@ CLASSIFY (risk + human dependency) → (UNDERSTAND) → ACCEPTANCE
 ## Install
 
 ```bash
-git clone https://github.com/PedroRosalba/rosalbito ~/rosalbito
+git clone https://github.com/rosalbito/rosalbito-skills ~/rosalbito
 cd ~/rosalbito && ./install.sh      # symlinks the skill, registers the guard hook
 # optional loop driver (recommended):
 #   in Claude Code: /plugin install ralph-loop@claude-plugins-official
