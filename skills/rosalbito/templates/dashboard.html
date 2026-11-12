@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rosalbito Runs</title>
+<link rel="icon" href="data:,">
 <style>
 :root {
   color-scheme: light;
@@ -91,7 +92,34 @@ a { color: var(--accent); }
   padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 10; max-width: 320px; }
 #tip b { font-weight: 600; }
 .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+.notice { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--border, #ccc); border-radius: 8px; color: var(--text-secondary); }
 footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+h2 .fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border-radius: 4px; }
+h2 .fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h2 .fold::before { content: ""; width: 0; height: 0; border-left: 5px solid var(--text-secondary); border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent; transition: transform .15s; }
+h2 .fold[aria-expanded="true"]::before { transform: rotate(90deg); }
+.card.folded .card-head { margin-bottom: 0; }
+.card.folded .card-tools { display: none; }
+.seg-ctl { display: inline-flex; gap: 0; }
+.seg-ctl button { border-radius: 0; margin-left: -1px; font-size: 12px; padding: 5px 9px; }
+.seg-ctl button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.seg-ctl button:last-child { border-radius: 0 8px 8px 0; }
+.scatter { display: block; width: 100%; height: auto; margin: 4px 0 12px; }
+.scatter text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.scatter .axis-title { fill: var(--text-secondary); font-size: 12px; }
+.scatter .grid { stroke: var(--border); stroke-width: 1; }
+.scatter .pt:hover .mark { stroke: var(--text-primary); }
+th.sortable { padding: 0; }
+th.sortable button { all: unset; cursor: pointer; display: block; width: 100%; padding: 6px 8px; box-sizing: border-box; }
+th.sortable button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+th[aria-sort="descending"] button::after { content: " ↓"; }
+th[aria-sort="ascending"] button::after { content: " ↑"; }
+.headline { font-size: 18px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+.chip { display: inline-block; font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.kindbar { display: flex; gap: 2px; height: 10px; min-width: 80px; margin-bottom: 3px; }
+.kindbar .seg:first-child { border-radius: 3px 0 0 3px; }
+.kindbar .seg:last-child { border-radius: 0 3px 3px 0; }
 </style>
 </head>
 <body>
@@ -110,42 +138,70 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
       </select>
     </div>
   </header>
+  <p class="notice" id="indexing" hidden></p>
 
   <section class="tiles" id="tiles"></section>
 
-  <section class="card">
+  <section class="card" data-section="attention">
     <div class="card-head"><div><h2>Needs attention</h2><p class="sub small">Gaps in the harness's own bookkeeping, and runs worth a look</p></div></div>
-    <ul class="flags" id="flags"></ul>
+    <div class="card-body"><ul class="flags" id="flags"></ul></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-section="cost-roles">
     <div class="card-head">
       <div><h2>Cost per run, by agent role</h2><p class="sub small">API-equivalent USD from Claude Code transcripts. Hover a segment for detail.</p></div>
-      <button id="t-runs" aria-pressed="false">Table</button>
+      <div class="card-tools"><button id="t-runs" aria-pressed="false">Table</button></div>
     </div>
-    <div class="legend" id="legend-roles"></div>
-    <div id="chart-runs"></div>
+    <div class="card-body">
+      <div class="legend" id="legend-roles"></div>
+      <p class="small muted" id="note-roles" style="margin:-4px 0 10px">“Tester / debugger subagents only” is the cost of subagents tagged tester or debugger, which Rosalbito rarely spawns: testing runs through verify.sh checks and debugging shows up as fix cycles. Both are in <a href="#verification">Verification</a>.</p>
+      <div id="chart-runs"></div>
+    </div>
+  </section>
+
+  <section class="card" data-section="tokens" id="tokens">
+    <div class="card-head">
+      <div><h2>Tokens</h2><p class="sub small">How many tokens each run consumed against the size of what it was handed. Total tokens = input + cache write + cache read + output over every agent (cache reads dominate). Hover a point for detail.</p></div>
+      <div class="card-tools seg-ctl" role="group" aria-label="Input size measure on the x axis" id="x-measure"></div>
+    </div>
+    <div class="card-body">
+      <div class="legend" id="legend-tokens"></div>
+      <div id="chart-tokens"></div>
+      <div class="scroll" id="table-tokens"></div>
+      <p class="small muted" id="note-tokens"></p>
+    </div>
+  </section>
+
+  <section class="card" data-section="verification" id="verification">
+    <div class="card-head"><div><h2>Verification</h2><p class="sub small">Testing and debugging as the evidence records it: every check runs through verify.sh, and a fix cycle is a check that failed and later passed.</p></div></div>
+    <div class="card-body">
+      <p class="headline" id="verification-headline"></p>
+      <p class="sub small" id="verification-sub" style="margin-bottom:10px"></p>
+      <div class="legend" id="legend-checks"></div>
+      <div class="scroll" id="table-verification"></div>
+      <p class="small muted" id="note-verification"></p>
+    </div>
   </section>
 
   <div class="grid2">
-    <section class="card">
-      <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs</p></div></div>
-      <div id="chart-kinds"></div>
+    <section class="card" data-section="kinds">
+      <div class="card-head"><div><h2>Where the money goes</h2><p class="sub small">Cost by token kind, filtered runs; shared-session usage counted once</p></div></div>
+      <div class="card-body"><div id="chart-kinds"></div></div>
     </section>
-    <section class="card">
-      <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs</p></div></div>
-      <div class="scroll" id="table-roles"></div>
+    <section class="card" data-section="roles">
+      <div class="card-head"><div><h2>Agent roles</h2><p class="sub small">Spawns and cost per role, filtered runs; shared-session usage counted once</p></div></div>
+      <div class="card-body"><div class="scroll" id="table-roles"></div></div>
     </section>
   </div>
 
-  <section class="card">
+  <section class="card" data-section="runs">
     <div class="card-head"><div><h2>Runs</h2><p class="sub small">Click a row for its agents</p></div></div>
-    <div class="scroll" id="table-runs"></div>
+    <div class="card-body"><div class="scroll" id="table-runs"></div></div>
   </section>
 
-  <section class="card">
-    <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs</p></div></div>
-    <div class="scroll" id="table-tools"></div>
+  <section class="card" data-section="tools" data-default="closed">
+    <div class="card-head"><div><h2>Tool calls</h2><p class="sub small">What the agents actually did, filtered runs; shared-session usage counted once</p></div></div>
+    <div class="card-body"><div class="scroll" id="table-tools"></div></div>
   </section>
 
   <footer id="footer"></footer>
@@ -161,7 +217,7 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
     { key: 'implementer', label: 'Implement / write', match: r => r === 'implementer' || r === 'writer' },
     { key: 'reviewer', label: 'Reviewer', match: r => r.startsWith('review') },
     { key: 'explore', label: 'Explore / plan', match: r => r === 'explorer' || r === 'planner' },
-    { key: 'debug', label: 'Debug / test', match: r => r === 'debugger' || r === 'tester' },
+    { key: 'debug', label: 'Tester / debugger subagents only', match: r => r === 'debugger' || r === 'tester' },
     { key: 'other', label: 'Other', match: () => true },
   ];
   const groupOf = role => ROLE_GROUPS.find(g => g.match(role || 'other')).key;
@@ -180,13 +236,18 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
     return el;
   }
   const usd = v => v == null ? '–' : v >= 100 ? '$' + Math.round(v) : v >= 10 ? '$' + v.toFixed(1) : '$' + v.toFixed(2);
-  const tok = v => v == null ? '–' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(v);
+  const tok = v => v == null ? '–' : v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(v);
   const pct = v => v == null ? '–' : Math.round(v * 100) + '%';
   const mins = v => v == null ? '–' : v >= 60 ? (v / 60).toFixed(1) + ' h' : v + ' min';
   const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
   const sum = (a, f) => a.reduce((t, x) => t + (f(x) || 0), 0);
   const cost = r => r.usage && r.usage.totals ? r.usage.totals.cost_usd : null;
   const agents = r => (r.usage && r.usage.agents) || [];
+  // runs that read the same session over overlapping windows (collect.sh): identical usage counts once
+  const counted = r => !r.usage_duplicate_of;
+  const sharedNote = r => r.usage_duplicate_of ? `same session window as ${r.usage_duplicate_of}: identical usage, counted once in totals`
+    : (r.usage_overlaps || []).length ? `shares a session window with ${r.usage_overlaps.join(', ')}: overlapping messages count in each` : null;
+  const sharedBadge = r => sharedNote(r) ? h('span', { class: 'chip', title: sharedNote(r) }, r.usage_duplicate_of ? 'shared usage' : 'shared session') : '';
   const isOpen = r => r.status !== 'done' && r.status !== 'blocked';
   const statusKey = r => r.status === 'done' ? 'done' : r.status === 'blocked' ? 'blocked' : r.stale ? 'stale' : 'open';
   const STATUS = {
@@ -229,20 +290,38 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
     const y = e.clientY + 14 + tip.offsetHeight > window.innerHeight ? e.clientY - tip.offsetHeight - 10 : e.clientY + 14;
     tip.style.left = x + 'px'; tip.style.top = y + 'px';
   });
+  // collapsible sections: open/closed per section survives reloads (when storage is available)
+  const SECTION_KEY = 'rosalbito-dashboard-sections';
+  let sectionState = {};
+  try { sectionState = JSON.parse(localStorage.getItem(SECTION_KEY) || '{}') || {}; } catch (e) {}
+  for (const sec of document.querySelectorAll('section.card[data-section]')) {
+    const id = sec.dataset.section, body = sec.querySelector('.card-body'), title = sec.querySelector('.card-head h2');
+    body.id = 'section-' + id;
+    const btn = h('button', { class: 'fold', type: 'button', 'aria-controls': body.id }, ...title.childNodes);
+    title.replaceChildren(btn);
+    const set = open => { body.hidden = !open; btn.setAttribute('aria-expanded', String(open)); sec.classList.toggle('folded', !open); };
+    set(typeof sectionState[id] === 'boolean' ? sectionState[id] : sec.dataset.default !== 'closed');
+    btn.addEventListener('click', () => {
+      const open = body.hidden; set(open); sectionState[id] = open;
+      try { localStorage.setItem(SECTION_KEY, JSON.stringify(sectionState)); } catch (e) {}
+    });
+  }
+
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   function tiles(runs) {
-    const fin = runs.filter(r => !isOpen(r));
+    const fin = runs.filter(r => !isOpen(r) && counted(r));
     const done = runs.filter(r => r.status === 'done');
-    const priced = runs.filter(r => cost(r) != null);
+    const priced = runs.filter(r => cost(r) != null && counted(r));
+    const dup = runs.filter(r => !counted(r)).length;
     const totalCost = sum(priced, cost);
-    const spawned = sum(runs, r => r.usage && r.usage.totals.agents_spawned);
+    const spawned = sum(runs.filter(counted), r => r.usage && r.usage.totals.agents_spawned);
     const rounds = sum(runs, r => r.review_rounds), rej = sum(runs, r => r.review_rejections);
     const cr = sum(priced, r => r.usage.totals.cache_read_tokens), cw = sum(priced, r => r.usage.totals.cache_write_tokens + r.usage.totals.input_tokens);
     const T = (label, value, note) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'note' }, note));
     $('tiles').replaceChildren(
       T('Runs', runs.length, `${done.length} done · ${runs.filter(r => r.status === 'blocked').length} blocked · ${runs.filter(isOpen).length} open`),
-      T('Estimated cost', usd(totalCost), `${priced.length} runs with transcripts`),
+      T('Estimated cost', usd(totalCost), `${priced.length} runs with transcripts` + (dup ? ` · ${dup} shared-usage run${dup === 1 ? '' : 's'} counted once` : '')),
       T('Median cost, finished run', usd(median(fin.map(cost).filter(v => v != null))), `median wall ${mins(median(fin.map(r => r.wall_minutes).filter(v => v != null)))}`),
       T('Subagents spawned', spawned, runs.length ? `${(spawned / runs.length).toFixed(1)} per run` : ''),
       T('Review rejections', rounds ? pct(rej / rounds) : '–', `${rej} of ${rounds} review rounds`),
@@ -262,6 +341,8 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
       else if (r.usage.totals.unpriced_models && r.usage.totals.unpriced_models.length) add('warning', `Unpriced model in ${name}`, `${r.usage.totals.unpriced_models.join(', ')}: add it to config/pricing.json.`);
       if (r.same_failure_max >= 3) add('serious', `Loop detected: ${name}`, `same check failed ${r.same_failure_max} times in a row.`);
       if (r.legacy) add('info', `Legacy layout: ${name}`, 'Recovered from an old metrics.jsonl; state and evidence files are gone.');
+      if (r.usage_duplicate_of) add('warning', `Usage shared with another run: ${name}`, `Ran in the same session window as ${r.usage_duplicate_of}, so the transcripts cannot tell their usage apart: both show the same tokens and cost, and totals count it once.`);
+      else if ((r.usage_overlaps || []).length && !runs.some(o => o.usage_duplicate_of === r.run_id)) add('info', `Overlapping session window: ${name}`, `Shares a session with ${r.usage_overlaps.join(', ')} over overlapping time; messages in the overlap count in each run.`);
     }
     const noVersion = runs.filter(r => !r.harness_version && !r.legacy);
     if (noVersion.length) add('info', `${noVersion.length} run${noVersion.length === 1 ? '' : 's'} without a harness version`, 'Started before init-run recorded harness_version; they cannot be compared across harness versions.');
@@ -355,7 +436,7 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
         onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tr.click(); } } },
         h('td', { class: 'small muted', style: 'white-space:nowrap' }, (r.started_at || '').replace('T', ' ').slice(0, 16)),
         h('td', {}, r.repo),
-        h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90)),
+        h('td', { class: 'task' }, shortTask(r.task || r.run_id, 90), ' ', sharedBadge(r)),
         h('td', {}, r.risk),
         h('td', {}, badge(r)),
         h('td', { class: 'num' }, mins(r.wall_minutes)),
@@ -378,12 +459,14 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
       (r.has_report ? ' · report.md ✓' : '') + (r.has_blocked_report ? ' · blocked.md ✓' : '') + ` · ${r.repo_path || ''}`);
     if (!as.length) return h('div', {}, meta, h('div', { class: 'muted small' }, 'No transcript data for this run.'));
     return h('div', {}, meta, h('table', {},
-      h('thead', {}, h('tr', {}, ['Agent', 'Role', 'Type', 'Model', 'Msgs', 'Cache read', 'Cache write', 'Output', 'Cost', 'Top tools'].map((t, i) => h('th', { class: i >= 4 && i <= 8 ? 'num' : null }, t)))),
+      h('thead', {}, h('tr', {}, ['Agent', 'Role', 'Type', 'Model', 'Effort', 'Msgs', 'Total tokens', 'Peak context', 'Cache read', 'Cache write', 'Output', 'Cost', 'Top tools'].map((t, i) => h('th', { class: i >= 5 && i <= 11 ? 'num' : null }, t)))),
       h('tbody', {}, as.map(a => h('tr', {},
         h('td', {}, (a.depth > 1 ? '↳ ' : '') + a.description),
         h('td', {}, a.role), h('td', { class: 'small muted' }, a.agent_type + (a.background ? ' · bg' : '')),
         h('td', { class: 'small' }, a.models.join(', ')),
-        h('td', { class: 'num' }, a.messages), h('td', { class: 'num' }, tok(a.cache_read_tokens)), h('td', { class: 'num' }, tok(a.cache_write_tokens)),
+        h('td', { class: 'small', title: a.effort_messages ? Object.entries(a.effort_messages).map(([k, v]) => `${k} ${v}`).join(', ') + (a.thinking_ms ? ` · thinking ${Math.round(a.thinking_ms / 1000)}s` : '') : null }, a.effort || '–'),
+        h('td', { class: 'num' }, a.messages), h('td', { class: 'num' }, tok(a.total_tokens)), h('td', { class: 'num', title: a.first_context_tokens != null ? `first request ${tok(a.first_context_tokens)}` : null }, tok(a.peak_context_tokens)),
+        h('td', { class: 'num' }, tok(a.cache_read_tokens)), h('td', { class: 'num' }, tok(a.cache_write_tokens)),
         h('td', { class: 'num', title: a.output_estimated_messages ? 'partly estimated' : null }, tok(a.output_tokens) + (a.output_estimated_messages ? '*' : '')),
         h('td', { class: 'num' }, usd(a.cost_usd)),
         h('td', { class: 'small muted' }, Object.entries(a.tools || {}).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(' · ')))))));
@@ -403,6 +486,243 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
         h('td', { style: 'width:35%' }, h('div', { class: 'meter' }, h('div', { style: `width:${(x.main + x.sub) / max * 100}%` }))))))));
   }
 
+  // tokens vs input size, effort and model
+  const totals = r => (r.usage && r.usage.totals) || null;
+  const totalTokens = r => totals(r) && totals(r).total_tokens != null ? totals(r).total_tokens : null;
+  const topKey = (m, skip) => { const e = Object.entries(m || {}).filter(([k]) => !skip.includes(k)).sort((a, b) => b[1] - a[1]); return e.length ? e[0][0] : null; };
+  const domEffort = r => topKey(totals(r) && totals(r).effort_mix, ['unknown']);
+  const domModel = r => topKey(totals(r) && totals(r).model_mix, ['<synthetic>']);
+  const shortModel = m => (m || '?').replace(/^claude-/, '');
+  const mixText = m => Object.entries(m || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join(' · ');
+  const diffOf = r => (r.input_size && r.input_size.diff) || null;
+  const diffLines = r => { const d = diffOf(r); return d ? d.added + d.removed : null; };
+  // Open runs: usage stops at the last state update while the diff runs to now, so the ratio would pair mismatched windows.
+  const perLine = r => { if (isOpen(r)) return null; const t = totalTokens(r), l = diffLines(r); return t != null && l ? t / l : null; };
+  const EFFORT_R = { low: 4, medium: 5, high: 6.5, xhigh: 8, max: 9.5 };
+  const midSession = r => !!(r.input_size && r.input_size.first_context_mid_session);
+  const estimated = r => (totals(r) && totals(r).output_estimated_messages) || 0;
+  // a second model carrying at least 5% of the tokens makes a run mixed-model
+  const secondModel = r => { const m = Object.entries((totals(r) && totals(r).model_mix) || {}).filter(([k]) => k !== '<synthetic>').sort((a, b) => b[1] - a[1]);
+    const t = m.reduce((x, [, v]) => x + v, 0); return m.length > 1 && t && m[1][1] / t >= 0.05 ? m[1][0] : null; };
+  const modelMixText = r => { const m = Object.entries((totals(r) && totals(r).model_mix) || {}).filter(([k]) => k !== '<synthetic>').sort((a, b) => b[1] - a[1]);
+    const t = m.reduce((x, [, v]) => x + v, 0); return m.map(([k, v]) => `${shortModel(k)}${m.length > 1 && t ? ' ' + pct(v / t) : ''}`).join(', '); };
+  const BASIS = { 'since run start': 'since its branch at run start', 'vs merge-base': 'against the merge-base with its base', 'since repo creation': 'since the repository was created (by the run)' };
+  const X_MEASURES = {
+    diff: { button: 'Diff lines', axis: 'Lines the run committed: added + removed since its branch at run start (or vs the merge-base; basis in the tooltip)',
+      get: diffLines, missing: 'no measurable diff (branch rewritten or gone, nothing committed inside the run window, or a legacy run)' },
+    context: { button: 'First-turn context', axis: "Orchestrator's first-request context, tokens (input + cache write + cache read); hollow dashed = started mid-session",
+      get: r => r.input_size ? r.input_size.first_context_tokens : null, missing: 'no orchestrator transcript' },
+    task: { button: 'Task chars', axis: 'Task statement length, characters', get: r => r.input_size ? r.input_size.task_chars : null, missing: 'no task text' },
+  };
+  const X_KEY = 'rosalbito-dashboard-x';
+  let xMeasure = 'diff';
+  try { const v = localStorage.getItem(X_KEY); if (X_MEASURES[v]) xMeasure = v; } catch (e) {}
+  $('x-measure').replaceChildren(...Object.entries(X_MEASURES).map(([k, m]) => h('button', { type: 'button', 'data-x': k, 'aria-pressed': String(k === xMeasure),
+    onclick: () => { xMeasure = k; try { localStorage.setItem(X_KEY, k); } catch (e) {} render(); } }, m.button)));
+  // colour follows the model across filters: fixed order over every run in the index
+  let modelOrder = [];
+  const modelColor = m => { const i = modelOrder.indexOf(m); return i >= 0 && i < 6 ? colorOf(i) : 'var(--text-muted)'; };
+  const SVG = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs, ...kids) {
+    const el = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k === 'tip' ? 'data-tip' : k, v);
+    for (const kid of kids.flat()) if (kid != null) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    return el;
+  }
+  // linear 0..max, or log when the values span more than ~1.5 orders of magnitude (log1p keeps zeros plottable)
+  function axis(vals, len, zeroOk) {
+    const pos = vals.filter(v => v > 0), max = Math.max(...vals, 1), minPos = pos.length ? Math.min(...pos) : 1;
+    const log = max / minPos > 30 || (vals.some(v => v <= 0) && max > 100 && zeroOk);
+    if (log) {
+      const f = v => Math.log10(1 + Math.max(0, v));
+      const lo = vals.some(v => v <= 0) ? 0 : Math.floor(f(minPos)), hi = Math.max(lo + 1, Math.ceil(f(max)));
+      const ticks = []; if (lo === 0) ticks.push(0); for (let k = Math.max(1, lo); k <= hi; k++) ticks.push(10 ** k);
+      return { log: true, at: v => (f(v) - lo) / (hi - lo) * len, ticks };
+    }
+    const raw = max / 4, mag = 10 ** Math.floor(Math.log10(raw)), step = [1, 2, 5, 10].map(m => m * mag).find(st => st >= raw);
+    const top = Math.ceil(max / step) * step, ticks = []; for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+    return { log: false, at: v => v / top * len, ticks };
+  }
+  function chartTokens(runs) {
+    for (const b of $('x-measure').children) b.setAttribute('aria-pressed', String(b.dataset.x === xMeasure));
+    const M = X_MEASURES[xMeasure];
+    const withTok = runs.filter(r => totalTokens(r) != null);
+    const pts = withTok.filter(r => M.get(r) != null);
+    const models = uniq(withTok.map(domModel));
+    const efforts = Object.keys(EFFORT_R).filter(e => withTok.some(r => domEffort(r) === e));
+    const ring = (stroke, dash) => s('svg', { width: 16, height: 16, 'aria-hidden': 'true' }, s('circle', { cx: 8, cy: 8, r: 6, fill: 'none', stroke, 'stroke-width': 2, 'stroke-dasharray': dash || null }));
+    $('legend-tokens').replaceChildren(
+      h('span', { class: 'muted' }, 'colour = dominant model (by tokens):'),
+      ...models.map(m => h('span', {}, h('i', { class: 'sw', style: `background:${modelColor(m)}` }), shortModel(m))),
+      withTok.some(secondModel) ? h('span', {}, ring('var(--text-secondary)'), 'outer ring = second model (mixed-model run)') : '',
+      xMeasure === 'context' && pts.some(midSession) ? h('span', {}, ring('var(--text-secondary)', '3 2'), 'hollow dashed = started mid-session') : '',
+      efforts.length ? h('span', { class: 'muted' }, 'marker size = dominant effort:') : '',
+      ...efforts.map(e => { const r = EFFORT_R[e]; return h('span', {}, s('svg', { width: 2 * r + 2, height: 2 * r + 2, 'aria-hidden': 'true' },
+        s('circle', { cx: r + 1, cy: r + 1, r, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 1.5 })), e); }));
+    const missing = withTok.length - pts.length, noTok = runs.length - withTok.length;
+    const mid = withTok.filter(midSession).length, est = withTok.filter(estimated).length, shared = withTok.filter(r => r.usage_duplicate_of).length;
+    const open = withTok.filter(isOpen).length;
+    $('note-tokens').textContent = [
+      missing ? `${missing} run${missing === 1 ? '' : 's'} not plotted: ${M.missing}.` : '',
+      noTok ? `${noTok} run${noTok === 1 ? '' : 's'} without token data (no transcript).` : '',
+      'Effort = the reasoning effort level most of the run’s assistant messages carried (Claude Code’s per-message effort field); the full mix is in the tooltip.',
+      mid ? `† ${mid} run${mid === 1 ? '' : 's'} started more than 15 minutes into an existing session: their first-turn context includes that earlier work, so it overstates what the run was handed.` : '',
+      est ? `* ${est} run${est === 1 ? '' : 's'} include subagent messages whose transcript kept only a partial output count; that output is estimated from visible text (hidden thinking not included).` : '',
+      shared ? `${shared} run${shared === 1 ? '' : 's'} marked shared usage ran in the same session window as another run: identical tokens, plotted for both, counted once in totals.` : '',
+      open ? `${open} run${open === 1 ? ' is' : 's are'} still open: tokens count up to the run's last state update, so Tokens / line is left blank until it finishes.` : '',
+    ].filter(Boolean).join(' ');
+    if (!pts.length) { $('chart-tokens').replaceChildren(h('div', { class: 'empty' }, `No runs with ${M.button.toLowerCase()} and token data in this filter.`)); }
+    else {
+      const W = 960, H = 340, L = 70, R = 16, T = 12, B = 52, pw = W - L - R, ph = H - T - B;
+      const xs = axis(pts.map(M.get), pw, true), ys = axis(pts.map(totalTokens), ph, false);
+      const svg = s('svg', { class: 'scatter', viewBox: `0 0 ${W} ${H}`, role: 'img',
+        'aria-label': `Scatter: total tokens per run against ${M.button.toLowerCase()}` });
+      for (const v of ys.ticks) { const y = T + ph - ys.at(v); svg.append(s('line', { class: 'grid', x1: L, x2: L + pw, y1: y, y2: y }), s('text', { x: L - 8, y: y + 4, 'text-anchor': 'end' }, tok(v))); }
+      for (const v of xs.ticks) { const x = L + xs.at(v); svg.append(s('line', { class: 'grid', x1: x, x2: x, y1: T, y2: T + ph, 'stroke-dasharray': '2 3' }), s('text', { x, y: T + ph + 16, 'text-anchor': 'middle' }, tok(v))); }
+      svg.append(s('text', { class: 'axis-title', x: L + pw / 2, y: H - 10, 'text-anchor': 'middle' }, `${M.axis}${xs.log ? ' · log scale' : ''}`),
+        s('text', { class: 'axis-title', x: 14, y: T + ph / 2, 'text-anchor': 'middle', transform: `rotate(-90 14 ${T + ph / 2})` }, `Total tokens per run${ys.log ? ' (log)' : ''}`));
+      for (const r of [...pts].sort((a, b) => (EFFORT_R[domEffort(b)] || 5) - (EFFORT_R[domEffort(a)] || 5))) {
+        const x = L + xs.at(M.get(r)), y = T + ph - ys.at(totalTokens(r)), e = domEffort(r), m = domModel(r), d = diffOf(r);
+        const m2 = secondModel(r), hollow = !e || (xMeasure === 'context' && midSession(r)), rr = EFFORT_R[e] || 5;
+        const tipHtml = `<b>${esc(r.repo)}</b> · ${esc(shortTask(r.task || r.run_id, 70))}<br>${esc(modelMixText(r))} · effort ${esc(e || 'unknown')} (${mixText(totals(r).effort_mix)} msgs)` +
+          `<br>${tok(totalTokens(r))} tokens${estimated(r) ? ' (output partly estimated)' : ''} · ${usd(cost(r))}<br>${esc(M.button)}: ${tok(M.get(r))}` +
+          (midSession(r) ? '<br>first-turn context: started mid-session' : '') +
+          (d ? `<br>diff ${d.files} files, +${d.added} −${d.removed}, ${esc(BASIS[d.basis] || d.basis || '')}` : '') +
+          (sharedNote(r) ? `<br>${esc(sharedNote(r))}` : '') + `<br><span class="muted">${esc(r.run_id)}</span>`;
+        svg.append(s('g', { class: 'pt', tip: tipHtml },
+          s('circle', { cx: x, cy: y, r: 12, fill: 'transparent' }),
+          m2 ? s('circle', { cx: x, cy: y, r: rr + 3, fill: 'none', stroke: modelColor(m2), 'stroke-width': 2 }) : null,
+          s('circle', { class: 'mark', cx: x, cy: y, r: rr, fill: hollow ? 'none' : modelColor(m), 'fill-opacity': 0.85,
+            stroke: hollow ? modelColor(m) : 'var(--surface-1)', 'stroke-width': 2, 'stroke-dasharray': hollow && e ? '3 2' : null })));
+      }
+      $('chart-tokens').replaceChildren(svg);
+    }
+    tableTokens(withTok);
+  }
+  const TOKEN_COLS = [
+    { key: 'run', label: 'Run', get: r => `${r.repo} · ${r.task || r.run_id}`, show: r => h('span', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 44), ' ', sharedBadge(r)) },
+    { key: 'model', label: 'Model(s)', get: r => domModel(r) || '', show: r => modelMixText(r) || '–' },
+    { key: 'effort', label: 'Effort', get: r => EFFORT_R[domEffort(r)] || 0, show: r => h('span', { title: Object.entries(totals(r).effort_mix || {}).map(([k, v]) => `${k} ${v}`).join(', ') }, domEffort(r) || 'unknown') },
+    { key: 'total', label: 'Total tokens', num: true, get: totalTokens, show: r => estimated(r)
+      ? h('span', { title: `${estimated(r)} subagent messages kept only a partial output count; their output is estimated from visible text` }, tok(totalTokens(r)) + '*') : tok(totalTokens(r)) },
+    { key: 'context', label: 'First context', num: true, get: X_MEASURES.context.get, show: r => midSession(r)
+      ? h('span', { title: 'the run started mid-session: this context includes earlier work in that session' }, tok(X_MEASURES.context.get(r)) + '†') : tok(X_MEASURES.context.get(r)) },
+    { key: 'task', label: 'Task chars', num: true, get: X_MEASURES.task.get, show: r => X_MEASURES.task.get(r) ?? '–' },
+    { key: 'diff', label: 'Diff lines', num: true, get: diffLines, show: r => { const d = diffOf(r); return d ? h('span', { title: `${d.files} files, +${d.added} −${d.removed}, ${BASIS[d.basis] || d.basis || ''} (${d.branch}; base ${d.base_branch})` }, `${tok(d.added + d.removed)} · ${d.files}f`) : '–'; } },
+    { key: 'perline', label: 'Tokens / line', num: true, get: perLine, show: r => tok(perLine(r) == null ? null : Math.round(perLine(r))) },
+    { key: 'cost', label: 'Cost', num: true, get: cost, show: r => usd(cost(r)) },
+  ];
+  let tokenSort = { key: 'total', dir: -1 };
+  function tableTokens(rs) {
+    if (!rs.length) { $('table-tokens').replaceChildren(''); return; }
+    const col = TOKEN_COLS.find(c => c.key === tokenSort.key);
+    const cmp = (a, b) => { const x = col.get(a), y = col.get(b); if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * tokenSort.dir; };
+    const sorted = [...rs].sort(cmp);
+    $('table-tokens').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, TOKEN_COLS.map(c => h('th', { class: 'sortable' + (c.num ? ' num' : ''), 'aria-sort': c.key === tokenSort.key ? (tokenSort.dir < 0 ? 'descending' : 'ascending') : null },
+        h('button', { type: 'button', onclick: () => { tokenSort = { key: c.key, dir: c.key === tokenSort.key ? -tokenSort.dir : (c.num ? -1 : 1) }; tableTokens(rs); } }, c.label))))),
+      h('tbody', {}, sorted.map(r => h('tr', {}, TOKEN_COLS.map(c => h('td', { class: c.num ? 'num' : null }, c.show(r))))))));
+  }
+
+  // verification: what the evidence says about testing and debugging
+  // <check-kinds> how a check is classified; tests/run.sh runs this block under node
+  const KIND_LABELS = [['e2e', 'E2E / render'], ['lint', 'Lint / format'], ['typecheck', 'Typecheck'], ['test', 'Test'], ['build', 'Build'], ['review', 'Review'], ['other', 'Other']];
+  const LABEL_KIND = [   // the label states the intent (a leading "review-" is stripped first)
+    ['e2e', /e2e|playwright|cypress|render|screenshot|visual|browser|lighthouse/],
+    ['lint', /lint|clippy|eslint|biome|fmt|format|prettier|ruff|shellcheck/],
+    ['typecheck', /typecheck|type-check|\btsc\b|mypy|pyright/],
+    ['build', /build|compile|bundle/],
+  ];
+  const LABEL_TESTISH = /test|suite|\bspec\b|smoke/;
+  // per command segment, after env assignments, `!`, `bash -c` and npx/bunx are peeled off
+  const TEST_RUNNER = /^((cargo|bun|deno|go|npm|pnpm|yarn|nx|make|mix|dotnet|swift|gradle|mvn)\s+(run\s+)?test\b|nx\s+(run-many|affected)\b.*\s-t\s*[\w,:-]*\btest\b|node\s+--test\b|(jest|vitest|pytest|rspec|mocha|phpunit)\b|python3?\s+-m\s+(pytest|unittest)\b|playwright\s+test\b)/;
+  const TEST_SCRIPT = /^((bash|sh|zsh|node|python3?|bun|deno|tsx)\s+)?\.{0,2}\/?([\w.@-]+\/)*(tests?\/[\w.\/@-]+|[\w.-]*\btests?\b[\w.-]*\.(sh|mjs|cjs|js|ts|py))(\s|$)/;
+  const CMD_KIND = [
+    ['e2e', /^(playwright|cypress|lighthouse)\b|\be2e\b/],
+    ['lint', /^((npm|pnpm|yarn|bun|make|nx)\s+(run\s+)?lint\b|cargo\s+(fmt|clippy)\b|(eslint|biome|prettier|ruff|shellcheck|rustfmt|gofmt|golangci-lint|stylelint)\b)/],
+    ['typecheck', /^(tsc\b|mypy\b|pyright\b|cargo\s+check\b|(npm|pnpm|yarn|bun)\s+(run\s+)?typecheck\b|turbo\s+typecheck\b)/],
+    ['build', /^((npm|pnpm|yarn|bun|nx)\s+(run\s+)?build\b|cargo\s+build\b|go\s+build\b|turbo\s+build\b|webpack\b|vite\s+build\b)/],
+  ];
+  // segments made only of these (plus cd/export/env) inspect files or output: they run no tests
+  const INSPECT = new Set(['test', 'grep', 'rg', 'jq', 'git', 'diff', 'cmp', 'ls', 'stat', 'find', 'echo', 'printf', 'cat', 'wc', 'head', 'tail', 'sed', 'awk', 'sort', 'uniq', 'shasum', 'sha256sum', 'xmllint', 'curl', 'for', 'do', 'done', 'if', 'then', 'fi', 'true', 'false', 'exit']);
+  const NEUTRAL = new Set(['cd', 'export', 'env', 'set', 'pushd', 'popd']);
+  function cmdSegments(command) {
+    const c = String(command || '').toLowerCase()
+      .replace(/\[\[[^\]]*\]\]|\[ [^\]]*\]/g, ' ')                       // [ … ] and [[ … ]]
+      .replace(/(^|[\s;&|(!])test\s+(-[a-z]{1,2}|!)\s[^;&|)]*/g, '$1')    // the shell's test builtin: test -f x
+      .replace(/\btest\(/g, '(')                                           // jq's test(…)
+      .replace(/\b(bash|sh|zsh)\s+-c\s+(['"])(.*?)\2/g, '$3')              // unwrap bash -c '…'
+      .replace(/'[^']*'/g, "''")                                           // quoted regexes and programs
+      .replace(/"[^"]*"/g, q => q.replace(/[|;&]/g, ' '));                 // no command breaks inside "…"
+    const peel = x => x.replace(/^[!({\s"']+/, '')
+      .replace(/^(bash|sh|zsh)\s+-c\s+/, '')
+      .replace(/^env\s+/, '')
+      .replace(/^([a-z_][a-z0-9_]*=("[^"]*"|'[^']*'|\S*)\s+)+/, '')
+      .replace(/^(npx|bunx|pnpm\s+exec|pnpm\s+dlx)\s+/, '');
+    return c.split(/&&|\|\||[;|\n]|\$\(|`/).map(x => { let y = x.trim(), z; do { z = y; y = peel(y).trim(); } while (y !== z); return y; }).filter(Boolean);
+  }
+  function kindOf(label, command) {
+    const l = String(label || '').toLowerCase().replace(/^(review|rev)[-:_]/, '');
+    for (const [k, re] of LABEL_KIND) if (re.test(l)) return k;
+    const segs = cmdSegments(command);
+    if (segs.some(x => CMD_KIND[0][1].test(x))) return 'e2e';
+    if (segs.some(x => TEST_RUNNER.test(x) || TEST_SCRIPT.test(x))) return 'test';
+    const verbs = segs.map(x => x.split(/\s+/)[0].replace(/^.*\//, '')).filter(v => !NEUTRAL.has(v));
+    const inspectOnly = verbs.length > 0 && verbs.every(v => INSPECT.has(v));
+    if (LABEL_TESTISH.test(l) && !inspectOnly) return 'test';
+    for (const [k, re] of CMD_KIND.slice(1)) if (segs.some(x => re.test(x))) return k;
+    return /review|audit/.test(String(label || '').toLowerCase()) ? 'review' : 'other';
+  }
+  // </check-kinds>
+  const kindColor = k => { const i = KIND_LABELS.findIndex(x => x[0] === k); return k === 'other' ? 'var(--text-muted)' : colorOf(i); };
+  // per run: executions per kind; legacy lines only kept the labels that ended passing (count 1 each)
+  function runKinds(r) {
+    const by = {};
+    const labels = r.check_labels || (r.checks_passing || []).map(label => ({ label, runs: 1 }));
+    for (const c of labels) { const k = kindOf(c.label, c.command); by[k] = (by[k] || 0) + c.runs; }
+    return by;
+  }
+  const ranTests = r => { const k = runKinds(r); return (k.test || 0) + (k.e2e || 0) > 0; };
+  function verification(runs) {
+    const known = runs.filter(r => r.fix_cycles != null);
+    const fix = sum(known, r => r.fix_cycles), cmdChanged = sum(known, r => r.fix_cycles_command_changed), withFix = known.filter(r => r.fix_cycles > 0).length;
+    const tested = runs.filter(ranTests).length;
+    $('verification-headline').textContent = `${tested} of ${runs.length} runs ran tests · ${fix} fix cycle${fix === 1 ? '' : 's'}`;
+    $('verification-sub').textContent = `${sum(runs, r => r.checks_run)} checks run, ${sum(runs, r => r.checks_failed)} failed · ` +
+      `${fix} fail → pass transition${fix === 1 ? '' : 's'} in ${withFix} run${withFix === 1 ? '' : 's'}, of which ${cmdChanged} came after the check command itself changed` +
+      (known.length < runs.length ? ` · unknown for ${runs.length - known.length} legacy run${runs.length - known.length === 1 ? '' : 's'}` : '');
+    $('legend-checks').replaceChildren(...KIND_LABELS.map(([k, l]) => h('span', {}, h('i', { class: 'sw', style: `background:${kindColor(k)}` }), l)));
+    $('note-verification').textContent = 'How check kinds are guessed. The label states intent first (a leading “review-” is stripped): ' +
+      'E2E / render (e2e, playwright, cypress, render, screenshot, visual, browser, lighthouse), Lint / format (lint, clippy, eslint, biome, fmt, format, prettier, ruff, shellcheck), ' +
+      'Typecheck (typecheck, tsc, mypy, pyright), Build (build, compile, bundle). Otherwise the command is split into segments (env assignments, !, bash -c and npx peeled off; ' +
+      'the shell’s test -f/[ … ], jq’s test(…) and quoted strings ignored): Test needs a runner (cargo/bun/deno/go/npm/pnpm/yarn/nx/make test, nx run-many -t …test, jest, vitest, pytest, rspec, mocha, node --test, playwright test) ' +
+      'or an executed test script (tests/…, *test*.sh/js/ts/py); a label saying test, suite, spec or smoke counts as Test unless its command only inspects (grep, jq, git, diff, cat, ls, echo, test, …). ' +
+      'Then Lint / Typecheck / Build from the command, else Review if the label says review or audit, else Other. “Ran tests” = at least one Test or E2E / render check. ' +
+      'Test files touched = files under tests/, __tests__/, spec/ or e2e/, or named *.test.* / *.spec.* / test_*.py, in the run’s own diff (Tokens section); – when that diff is unknown. ' +
+      'A fix cycle is one fail → pass transition of a check label in a run (“x-2” counts as “x”; a missing exit code is unknown, not a failure); when the passing run used a different command, the check was rewritten, so the code may not have been the fix. ' +
+      'Legacy runs kept only the labels that ended passing, so their kinds are partial and fix cycles unknown.';
+    if (!runs.length) { $('table-verification').replaceChildren(h('div', { class: 'empty' }, 'No runs match these filters.')); return; }
+    const rs = [...runs].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    $('table-verification').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Run'), h('th', { class: 'num' }, 'Checks'), h('th', { class: 'num' }, 'Failed'), h('th', {}, 'Check kinds (executions)'),
+        h('th', { class: 'num' }, 'Test files touched'), h('th', { class: 'num' }, 'Fix cycles'), h('th', {}, 'Tests'))),
+      h('tbody', {}, rs.map(r => {
+        const by = runKinds(r), tot = sum(Object.values(by), v => v);
+        const order = KIND_LABELS.filter(([k]) => by[k]);
+        const kinds = tot ? h('div', {},
+          h('div', { class: 'kindbar' }, order.map(([k, l]) => h('div', { class: 'seg', style: `flex:${by[k]} 1 0; background:${kindColor(k)}`, tip: `<b>${esc(l)}</b> · ${by[k]} check run${by[k] === 1 ? '' : 's'}` }))),
+          h('div', { class: 'small muted' }, order.map(([k, l]) => `${l.toLowerCase()} ${by[k]}`).join(' · ') + (r.check_labels ? '' : ' (passing labels only)'))) : h('span', { class: 'muted' }, 'no checks recorded');
+        return h('tr', {},
+          h('td', { title: r.task || '' }, h('b', {}, r.repo), ' · ', shortTask(r.task || r.run_id, 50)),
+          h('td', { class: 'num' }, r.checks_run ?? '–'), h('td', { class: 'num' }, r.checks_failed ?? '–'),
+          h('td', { style: 'min-width:220px' }, kinds),
+          h('td', { class: 'num' }, r.test_files_touched ?? '–'),
+          h('td', { class: 'num', title: (r.fix_cycle_labels || []).join(', ') || null }, r.fix_cycles == null ? '–'
+            : r.fix_cycles_command_changed ? `${r.fix_cycles} (${r.fix_cycles_command_changed} cmd changed)` : r.fix_cycles),
+          h('td', {}, ranTests(r) ? h('span', { class: 'badge' }, h('span', { class: 'dot', style: 'background:var(--good)' }), 'ran') : h('span', { class: 'muted' }, 'none recorded')));
+      }))));
+  }
+
   const ago = iso => { if (!iso) return 'never'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
   let reachable = true;
   function status() {
@@ -420,18 +740,31 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
         reachable = true;
         const changed = next.version !== RAW.version;
         RAW = next;
-        if (changed) { RUNS = RAW.runs || []; fillFilters(); render(); }
+        if (changed) { RUNS = RAW.runs || []; fillFilters(); setModelOrder(); render(); }
       } catch (e) { reachable = false; }
-      status();
+      indexing(); status();
     };
     setInterval(poll, 5000);
     setInterval(status, 1000);
   }
 
+  function setModelOrder() { modelOrder = uniq(RUNS.flatMap(r => Object.keys((totals(r) && totals(r).model_mix) || {})).filter(m => m !== '<synthetic>')); }
+  setModelOrder();
+
+  // An empty index usually means the first scan is still running: say so instead of showing zeros.
+  function indexing() {
+    const el = $('indexing'), empty = !RUNS.length;
+    el.hidden = !empty;
+    if (empty) el.textContent = RAW.live && (RAW.collecting || !RAW.generated_at)
+      ? 'Indexing your repositories… the first scan walks your home directory and can take a minute. This page fills in by itself.'
+      : RAW.live ? 'No Rosalbito runs found yet. Runs appear here as soon as a repository has an .agent/runs directory.'
+      : 'No runs in this snapshot. Run dashboard.sh --serve for live updates.';
+  }
   function render() {
     const runs = filtered();
+    indexing();
     status();
-    tiles(runs); flags(runs); chartRuns(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
+    tiles(runs); flags(runs); chartRuns(runs); chartTokens(runs); verification(runs); chartKinds(runs.filter(counted)); tableRoles(runs.filter(counted)); tableRuns(runs); tableTools(runs.filter(counted));
     $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skills/rosalbito/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
   }
   render();

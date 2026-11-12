@@ -185,15 +185,43 @@ versioned and replaced on update); re-run it after updating to pick up a newer d
 Every run, in every repo, on one local page (`~/.rosalbito/dashboard.html`): outcome, wall
 time, iterations, checks, review rejections, subagents spawned, and API-equivalent cost per
 agent role and per token kind, plus a "Needs attention" list (abandoned runs, HIGH runs
-without a report, runs with no transcript, loops). The numbers are read after the fact:
+without a report, runs with no transcript, loops). Two sections answer "what did it cost
+for what it was given" and "did it test":
+
+- **Tokens**: total tokens per run (input + cache write + cache read + output, every agent)
+  against the size of its input, with the x axis switchable between lines the run committed,
+  the orchestrator's first-turn context and the task's length; colour is the dominant model,
+  marker size the dominant reasoning effort. Runs that started mid-session, totals with
+  estimated output and mixed-model runs are marked. A sortable table adds tokens per changed
+  line and cost.
+- **Verification**: per run, checks run and failed, check kinds (test, typecheck, lint, build,
+  E2E/render, review, other: a label's stated intent, else test runners and executed test
+  scripts found in the command; the shell's `test -f` or a grep over `tests/` does not count;
+  the heuristic is on the page), test files touched and fix cycles (fail → pass transitions:
+  the debugging loop, with those that passed only after the check command changed called
+  out). Testing lives here because it runs through `verify.sh`, not through tester/debugger
+  subagents; the cost-by-role chart's tester/debugger series counts only those subagents.
+
+Every section folds (Tool calls starts folded) and remembers that in the browser.
+The numbers are read after the fact:
 
 - `usage.sh` parses Claude Code's own transcripts (`~/.claude/projects/<dir>/<session>.jsonl`
   and `<session>/subagents/agent-*.jsonl` + `.meta.json`), finds a run's sessions by the
   `run_id` it printed (or the `sessions` recorded in `state.md`), keeps the messages inside
   the run's time window, and prices them with `config/pricing.json`. Subagent transcripts often
   keep only partial output counts; those are estimated from visible text and flagged.
+  Per agent it also records the reasoning effort of each message (Claude Code's `effort`
+  field: `effort_messages`, dominant `effort`), `thinking_ms`, `total_tokens`, and the context
+  size of its first and largest request; per run `total_tokens`, `peak_context_tokens`,
+  `effort_mix`, `model_mix`. Fork subagents replay their parent's transcript; those lines count
+  once. An orchestrator whose session began well before the run is flagged `mid_session`.
 - `collect.sh` rebuilds `~/.rosalbito/runs.jsonl` from every repo with an `.agent/` (registered
-  by init-run/finish-run, or found under `$HOME`), finished or not.
+  by init-run/finish-run, or found under `$HOME`), finished or not. Each line carries
+  `input_size` (task length, first-turn context, and what the run committed, measured with
+  read-only git from the branch's own commit at run start, or the merge-base, to the branch at
+  finish; `null` when that cannot be resolved or holds no commit from the run's window), from
+  the evidence `check_labels` and `fix_cycles`, and `usage_overlaps` / `usage_duplicate_of` for
+  runs that shared a session window (their identical usage is counted once in totals).
 - `collect.sh` is incremental: a run whose state, evidence and transcripts did not change since the
   last pass keeps its line, so a refresh with nothing new costs well under a second.
 - `dashboard-server.mjs` (Node, no dependencies, 127.0.0.1 only) re-collects every 15 s, with a full pass
