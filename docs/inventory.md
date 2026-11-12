@@ -16,7 +16,7 @@ Verified by inspection, not assumed. Re-check with `skill/scripts/detect-tools.s
 | Existing `auto-push.sh` | pushes `~/projects` (not a repo) → effectively a no-op | file read | ignored |
 | `enor-plan` / `enor-log` | symlinked skills in `~/.claude/skills` (Enor suite) | ls | not wired; heavy planning is replaced by the understanding pass + plan section. Candidate for HIGH+ if real runs show plans are too thin |
 | `skill-creator` | synced Anthropic skill | `~/.claude/skills/synced/.../skill-creator` | conventions followed: SKILL.md < 500 lines, `scripts/`, `references/`, progressive disclosure |
-| `gh` | 2.x, logged in as PedroRosalba, scopes repo/workflow | `gh auth status` | PR creation |
+| `gh` | 2.x, logged in as rosalbito, scopes repo/workflow | `gh auth status` | PR creation |
 | `jq` | /opt/homebrew/bin/jq | which | evidence, hooks, metrics |
 | `yq` | absent | which | not needed (awk/sed parsing of flat YAML) |
 | Node 26 / cargo 1.93 / python 3.14 | present | versions | target repos' checks |
