@@ -38,7 +38,7 @@ CLASSIFY (risk + human dependency) → (UNDERSTAND) → ACCEPTANCE
 As a Claude Code plugin (this repository is both the marketplace and the plugin), in Claude Code:
 
 ```
-/plugin marketplace add PedroRosalba/rosalbito
+/plugin marketplace add rosalbito/rosalbito-skills
 /plugin install rosalbito@rosalbito
 # optional loop driver (recommended):
 /plugin install ralph-loop@claude-plugins-official
@@ -74,7 +74,7 @@ Requires: Claude Code, `git`, `gh` (authenticated), `jq`, bash 3.2+ (macOS defau
 Without the plugin system, from a clone:
 
 ```bash
-git clone https://github.com/PedroRosalba/rosalbito ~/rosalbito
+git clone https://github.com/rosalbito/rosalbito-skills ~/rosalbito
 cd ~/rosalbito && ./install.sh      # symlinks both skills, registers the guard hook in ~/.claude/settings.json
 ```
 
