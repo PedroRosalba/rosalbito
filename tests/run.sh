@@ -355,6 +355,142 @@ check "allow git push --force-with-lease? no"   'denied "git push --force-with-l
 check "deny git branch -D main"                 'denied "git branch -D main"'
 check "ignores non-Bash tool input"             '[ "$(printf "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"x\"}}" | bash "$HOOK" >/dev/null 2>&1; echo $?)" -eq 0 ]'
 
+echo "inbox"
+export ROSALBITO_INBOX="$TMP/inbox"   # never touch the real vault
+I="$S/inbox.sh"
+prio() { sed -n "s/^priority: //p" "$ROSALBITO_INBOX/$1.md"; }
+pw() { printf "## In plain words\n- %s\n" "$1"; }   # every new item needs this section
+check "empty inbox lists cleanly"               'bash "$I" list | grep >/dev/null "inbox empty"'
+check "add rejects unknown kind"                '! bash "$I" add --kind nope --title x >/dev/null 2>&1'
+check "add refuses a body without plain words" '! echo "jargon only" | bash "$I" add --kind read --title x >/dev/null 2>&1 && ! bash "$I" add --kind read --title x </dev/null >/dev/null 2>&1'
+check "add rejects bad priority"                '! bash "$I" add --kind read --title x --priority P9 >/dev/null 2>&1'
+r1=$(pw "read me" | bash "$I" add --kind read --title "Ecosystem note")
+r2=$(pw "ship it" | bash "$I" add --kind ship-pr --title "Undraft #1" --link https://x/pull/1)
+r3=$(pw "reply" | bash "$I" add --kind review-comment --title "Reply on #2" --link https://x/pull/2)
+r4=$(pw "hot" | bash "$I" add --kind read --title "Red CI" --priority P0)
+check "default priorities by kind"              '[ "$(prio "$r1")$(prio "$r2")$(prio "$r3")" = "P3P1P1" ]'
+check "list orders P0, comment, ship, read"     '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r4 $r3 $r2 $r1 " ]'
+r2b=$(pw "new body" | bash "$I" add --kind ship-pr --title "Undraft #1 (v2)" --link https://x/pull/1 --priority P0)
+check "same open link updates, no duplicate"    '[ "$r2b" = "$r2" ] && [ "$(ls "$ROSALBITO_INBOX" | wc -l | tr -d " ")" -eq 4 ] && grep >/dev/null "new body" "$ROSALBITO_INBOX/$r2.md"'
+check "raised priority reorders by kind"        '[ "$(bash "$I" list --tsv | cut -f2 | tr "\n" " ")" = "$r2 $r4 $r3 $r1 " ]'
+bash "$I" close "$r3" dropped
+check "closed items move to archive"            '! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$r3$" && bash "$I" list --archive --tsv | cut -f2 | grep >/dev/null "^$r3$" && [ -f "$TMP/archive/$r3.md" ]'
+check "dropped outcome recorded"                'grep >/dev/null "^status: dropped$" "$TMP/archive/$r3.md" && grep >/dev/null "^outcome: dropped$" "$TMP/archive/$r3.md"'
+check "frontmatter intact after close"          '[ "$(grep -c "^---$" "$TMP/archive/$r3.md")" -eq 2 ]'
+check "set finds items in any folder"           'bash "$I" set "$r3" note x && grep >/dev/null "^note: x$" "$TMP/archive/$r3.md"'
+r6=$(bash "$I" add --kind read --title "Comment on emscripten #27831: \"leak\"" < <(pw x))
+check "titles keep '#' and unescaped quotes"    'bash "$I" list --tsv | grep >/dev/null "	Comment on emscripten #27831: \"leak\"	"'
+bash "$I" close "$r6" read
+check "set on unknown id fails"                 '! bash "$I" set nope status done >/dev/null 2>&1'
+r5=$(bash "$I" add --kind decide --title "Quote \"this\" & that/one" < <(pw x))
+check "titles with quotes and specials survive" 'bash "$I" list | grep >/dev/null "this" && [ "$(grep -c "^---$" "$ROSALBITO_INBOX/$r5.md")" -eq 2 ]'
+
+echo "inbox: posted / outbox / refresh (fake gh)"
+GHFIX="$TMP/ghfix"; mkdir -p "$GHFIX" "$TMP/fakebin"; export GHFIX
+cat > "$TMP/fakebin/gh" <<'EOF'
+#!/usr/bin/env bash
+# fake gh: `gh api [--paginate] <path> --jq <expr>` answered from $GHFIX/<path with / as _>.json
+p="" q="."
+while [ $# -gt 0 ]; do case "$1" in api|--paginate) shift ;; --jq) q="$2"; shift 2 ;; *) p="$1"; shift ;; esac; done
+f="$GHFIX/$(printf '%s' "$p" | tr / _).json"
+if [ -f "$f" ]; then jq -r "$q" "$f"; elif [[ "$p" == */comments || "$p" == */reviews ]]; then jq -r "$q" <<<'[]'; else exit 1; fi
+EOF
+chmod +x "$TMP/fakebin/gh"
+G() { PATH="$TMP/fakebin:$PATH" ROSALBITO_GH_LOGIN=pedro bash "$I" "$@"; }
+fx() { printf '%s' "$2" > "$GHFIX/$(printf '%s' "$1" | tr / _).json"; }
+fx repos/me/x/issues/7 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"pedro"}}'
+fx repos/me/x/issues/7/comments '[{"created_at":"2000-01-01T00:00:00Z","user":{"login":"guy"},"html_url":"u0","body":"old"},
+  {"created_at":"2999-01-01T00:00:00Z","user":{"login":"guy"},"html_url":"u1","body":"looks good, one nit"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"pedro"},"html_url":"u2","body":"mine"},
+  {"created_at":"2999-01-01T00:00:02Z","user":{"login":"ci[bot]"},"html_url":"u3","body":"green"}]'
+fx repos/up/y/issues/9 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"guy"}}'
+fx repos/up/y/issues/9/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"v1","body":"to guy"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"dark"},"html_url":"v2","body":"@pedro could you rebase?"}]'
+p1=$(bash "$I" add --kind ship-pr --title "Fix thing" < <(pw x))
+G posted "$p1" https://github.com/me/x/pull/7 "https://github.com/up/y/pull/9#issuecomment-1"
+check "posted moves to outbox"                  '[ -f "$TMP/outbox/$p1.md" ] && [ ! -f "$ROSALBITO_INBOX/$p1.md" ] && bash "$I" list --outbox --tsv | cut -f2 | grep >/dev/null "^$p1$"'
+check "watch = thread urls, fragment stripped"  'grep >/dev/null "^watch: https://github.com/me/x/pull/7 https://github.com/up/y/pull/9$" "$TMP/outbox/$p1.md"'
+G refresh >/dev/null
+check "reply on our PR -> review-comment item"  'grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: review-comment$"'
+check "refresh items carry plain words"      'grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^## In plain words"'
+check "reply lists guy, not us, bots or old"    'f=$(grep -l "^link: https://github.com/me/x/pull/7$" "$ROSALBITO_INBOX"/*.md); grep >/dev/null "@guy: u1" "$f" && ! grep >/dev/null "u0\|u2\|u3" "$f"'
+check "mention on their thread -> inbox item"   'grep -l "^link: https://github.com/up/y/pull/9$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: v2"'
+check "other chatter is activity, not an item"  'grep >/dev/null "^activity: 1 new comment" "$TMP/outbox/$p1.md" && ! grep -rl "v1" "$ROSALBITO_INBOX" >/dev/null'
+check "open PR stays in outbox"                 '[ -f "$TMP/outbox/$p1.md" ]'
+n_before=$(ls "$ROSALBITO_INBOX" | wc -l)
+G refresh >/dev/null
+check "second refresh does not duplicate"       '[ "$(ls "$ROSALBITO_INBOX" | wc -l)" -eq "$n_before" ]'
+fx repos/me/x/issues/7 '{"state":"closed","pull_request":{"merged_at":"2026-10-26T00:00:00Z"},"user":{"login":"pedro"}}'
+G refresh >/dev/null
+check "merged PR archives the outbox item"      '[ -f "$TMP/archive/$p1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$p1.md"'
+old=$(bash "$I" add --kind read --title "Old note" < <(pw x)); sed -i.bak "s/^created: .*/created: 2000-01-01T00:00:00Z/" "$ROSALBITO_INBOX/$old.md" && rm "$ROSALBITO_INBOX/$old.md.bak"
+fx repos/up/z/issues/3 '{"state":"closed","pull_request":null,"user":{"login":"x"}}'
+gone=$(bash "$I" add --kind review-comment --title "Answer z" --link https://github.com/up/z/issues/3 < <(pw x))
+G refresh --dry-run >/dev/null
+check "dry run changes nothing"                 '[ -f "$ROSALBITO_INBOX/$old.md" ] && [ -f "$ROSALBITO_INBOX/$gone.md" ]'
+G refresh >/dev/null
+check "old reads expire to archive"             'grep >/dev/null "^outcome: expired$" "$TMP/archive/$old.md"'
+check "closed upstream thread closes inbox item" 'grep >/dev/null "^outcome: upstream-closed$" "$TMP/archive/$gone.md"'
+fx repos/up/w/issues/5 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"robobun"}}'
+fx repos/up/w/issues/5/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"w1","body":"lgtm"},
+  {"created_at":"2999-01-01T00:00:01Z","user":{"login":"dark"},"html_url":"w2","body":"@pedro does yours overlap?"}]'
+w1=$(G watch --title "robobun fix for listen" --repo up/w "https://github.com/up/w/pull/5#discussion_r1" </dev/null)
+check "watch creates a watch item"              '[ -f "$TMP/watch/$w1.md" ] && grep >/dev/null "^kind: watch$" "$TMP/watch/$w1.md" && grep >/dev/null "^watch: https://github.com/up/w/pull/5$" "$TMP/watch/$w1.md"'
+check "watch dedupes by thread"                 '[ "$(G watch --title "renamed" https://github.com/up/w/pull/5 </dev/null)" = "$w1" ] && [ "$(ls "$TMP/watch" | wc -l | tr -d " ")" -eq 1 ] && grep >/dev/null "renamed" "$TMP/watch/$w1.md"'
+check "list --watch shows it, inbox does not"   'bash "$I" list --watch --tsv | cut -f2 | grep >/dev/null "^$w1$" && ! bash "$I" list --tsv | cut -f2 | grep >/dev/null "^$w1$"'
+r7=$(bash "$I" add --kind read --title "Gap already has a PR" < <(pw x))
+G watch "$r7" https://github.com/up/w/issues/6 >/dev/null
+check "watch <id> moves an inbox item"          '[ -f "$TMP/watch/$r7.md" ] && [ ! -f "$ROSALBITO_INBOX/$r7.md" ] && grep >/dev/null "^status: watching$" "$TMP/watch/$r7.md"'
+G refresh >/dev/null
+check "mention on a watched thread -> inbox"    'grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "@dark: w2"'
+check "watch chatter is activity"               'grep >/dev/null "^activity: 1 new comment" "$TMP/watch/$w1.md" && ! grep -rl "w1$" "$ROSALBITO_INBOX" >/dev/null'
+fx repos/up/v/issues/8 '{"state":"open","pull_request":{"merged_at":null},"user":{"login":"guy"}}'
+w2=$(G watch --title "Guy's event loop" --then "send our waker fix PR" https://github.com/up/v/pull/8 </dev/null)
+check "--then is stored on the watch"           'grep >/dev/null "^then: send our waker fix PR$" "$TMP/watch/$w2.md"'
+fx repos/up/w/issues/5 '{"state":"closed","pull_request":{"merged_at":"2026-10-28T00:00:00Z"},"user":{"login":"robobun"}}'
+fx repos/up/v/issues/8 '{"state":"closed","pull_request":{"merged_at":"2026-10-28T00:00:00Z"},"user":{"login":"guy"}}'
+G refresh >/dev/null
+check "merged watched PR archives the item"     '[ -f "$TMP/archive/$w1.md" ] && grep >/dev/null "^outcome: merged$" "$TMP/archive/$w1.md"'
+check "no plan -> no inbox item on close"       '! grep -l "^link: https://github.com/up/w/pull/5$" "$ROSALBITO_INBOX"/*.md | xargs grep >/dev/null "^kind: decide$"'
+check "plan fires a decide item when it lands"  'f=$(grep -l "^link: https://github.com/up/v/pull/8$" "$ROSALBITO_INBOX"/*.md) && grep >/dev/null "^kind: decide$" "$f" && grep >/dev/null "send our waker fix PR" "$f" && [ -f "$TMP/archive/$w2.md" ]'
+echo "session records"
+SS="$S/session.sh"
+SD="$TMP/sessions"
+check "save needs a session id"                 '! (unset CLAUDE_CODE_SESSION_ID; pw x | bash "$SS" save --title t >/dev/null 2>&1)'
+check "save refuses a body without plain words" '! echo "jargon" | CLAUDE_CODE_SESSION_ID=s1 bash "$SS" save --title t >/dev/null 2>&1'
+o1=$(bash "$I" add --kind ship-pr --title "Waker fix" < <(pw x)); G posted "$o1" "https://github.com/up/t/issues/33#issuecomment-9" >/dev/null
+s1=$(pw "worked on the waker bug" | CLAUDE_CODE_SESSION_ID=sess-1 bash "$SS" save --title "Tokio waker issue" --repo up/t --items "$o1")
+check "save writes a record with resume info"   '[ -f "$SD/$s1.md" ] && grep >/dev/null "^session_id: sess-1$" "$SD/$s1.md" && grep >/dev/null "claude --resume sess-1" "$SD/$s1.md" && grep >/dev/null "^cwd: $PWD$" "$SD/$s1.md"'
+check "items link back to the record"           'grep >/dev/null "^context: $SD/$s1.md$" "$TMP/outbox/$o1.md"'
+check "items add their threads to the watch"    'grep >/dev/null "^watch: https://github.com/up/t/issues/33$" "$SD/$s1.md"'
+s1b=$(pw "later: fix PR exists" | CLAUDE_CODE_SESSION_ID=sess-1 bash "$SS" save --title "Tokio waker issue" --watch https://github.com/up/t/pull/37)
+check "same session saves in place, lists merge" '[ "$s1b" = "$s1" ] && [ "$(ls "$SD" | wc -l | tr -d " ")" -eq 1 ] && grep >/dev/null "later: fix PR" "$SD/$s1.md" && grep >/dev/null "^watch: https://github.com/up/t/issues/33 https://github.com/up/t/pull/37$" "$SD/$s1.md" && grep >/dev/null "^repo: up/t$" "$SD/$s1.md"'
+s2=$(pw "other work" | CLAUDE_CODE_SESSION_ID=sess-2 bash "$SS" save --title "Bun net gaps" --repo oven/bun)
+check "find by thread (pull vs issues, fragment)" '[ "$(bash "$SS" find "https://github.com/up/t/pull/33#x" | cut -f1)" = "$s1" ]'
+check "find does not match a longer number"     '[ -z "$(bash "$SS" find https://github.com/up/t/issues/3)" ]'
+check "find by repo and by text"                '[ "$(bash "$SS" find oven/bun | cut -f1)" = "$s2" ] && [ "$(bash "$SS" find "fix PR exists" | cut -f1)" = "$s1" ]'
+check "resume prints the command"               'bash "$SS" resume "$s1" | grep >/dev/null "claude --resume sess-1$"'
+fx repos/up/t/issues/33 '{"state":"open","pull_request":null,"user":{"login":"pedro"}}'
+fx repos/up/t/issues/33/comments '[{"created_at":"2999-01-01T00:00:00Z","user":{"login":"dark"},"html_url":"t1","body":"can you test the fix?"}]'
+G refresh >/dev/null
+check "a reply item points at the old session"  'f=$(grep -l "^link: https://github.com/up/t/issues/33$" "$ROSALBITO_INBOX"/*.md) && grep >/dev/null "Earlier sessions on this thread" "$f" && grep >/dev/null "claude --resume sess-1" "$f"'
+unset ROSALBITO_INBOX GHFIX
+
+echo "oss-detect"
+O="$S/oss-detect.sh"
+mkdir -p "$TMP/oss/fork" "$TMP/oss/plain" "$TMP/oss/research/sub"
+(cd "$TMP/oss/fork" && git init -q . && git remote add origin https://github.com/someone/turborepo.git && git remote add upstream git@github.com:vercel/turborepo.git)
+(cd "$TMP/oss/plain" && git init -q . && git remote add origin https://github.com/someone/app.git)
+out="$(bash "$O" "$TMP/oss/fork")"; rc=$?
+check "fork with upstream remote is OSS"        '[ $rc -eq 0 ] && echo "$out" | grep >/dev/null "^upstream=vercel/turborepo$" && echo "$out" | grep >/dev/null "^vault_dir=$HOME/Projects/obsidian-vault/turborepo$"'
+check "owner/* pattern matches"                 '(cd "$TMP/oss/plain" && git remote add up2 https://github.com/cloudflare/workerd) && bash "$O" "$TMP/oss/plain" | grep >/dev/null "^upstream=cloudflare/workerd$"'
+(cd "$TMP/oss/plain" && git remote remove up2)
+check "unrelated repo is not OSS"               '[ "$(bash "$O" "$TMP/oss/plain")" = "oss=0" ] && ! bash "$O" "$TMP/oss/plain" >/dev/null'
+mkdir -p .agent/context && printf 'vault: %s\ninbox: oss/inbox\ngit_identity: P <p@x>\nrepos:\n  x/y: z\npaths:\n  %s: research  # a workspace\n' "$TMP/v" "$TMP/oss/research" > .agent/context/oss.yaml
+check "context override + path match (subdir)" 'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^vault_dir=$TMP/v/research$"'
+check "identity mismatch reported"              'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^identity_ok=0$"'
+rm .agent/context/oss.yaml
+
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'

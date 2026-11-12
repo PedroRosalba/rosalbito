@@ -1,0 +1,20 @@
+# Open-source repos Pedro contributes to (see references/oss.md).
+# A repo is in OSS mode when one of its GitHub remotes matches `repos:` (owner/name or owner/*),
+# or the working directory is under one of `paths:`. The value is the vault folder that holds
+# the knowledge for that ecosystem. Override per repo in .agent/context/oss.yaml.
+
+vault: ~/Projects/obsidian-vault
+inbox: oss/inbox
+git_identity: PedroRosalba <pedro.dandrea.rpd@gmail.com>
+
+repos:
+  vercel/turborepo: turborepo
+  cloudflare/*: cloudflare
+  tokio-rs/*: cloudflare
+  wasm-bindgen/*: cloudflare
+  rustwasm/*: cloudflare
+  emscripten-core/*: cloudflare
+
+paths:
+  ~/Projects/tokio-workers-research: cloudflare
+  ~/Projects/tokio-workers-alternatives: cloudflare

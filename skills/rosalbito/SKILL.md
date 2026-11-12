@@ -1,6 +1,6 @@
 ---
 name: rosalbito
-description: Universal engineering entrypoint. Use for ANY engineering task Pedro hands over — "fix this typo", "add a test", "migrate the payment schema", "refactor X", "implement issue #N", "understand this repo", "grill me about this design", "add telemetry" — whenever the user types /rosalbito or asks for a change that should end up as a verified pull request. Classifies the task by engineering risk and by human-decision dependency, routes it through understand → acceptance → plan → implement → verify → review → PR with deterministic evidence, persistent resumable state in .agent/, hard caps, and a loop driver that keeps working after the session ends. Overhead scales with the task: trivial tasks get near-zero ceremony.
+description: Universal engineering entrypoint. Use for ANY engineering task Pedro hands over — "fix this typo", "add a test", "migrate the payment schema", "refactor X", "implement issue #N", "understand this repo", "grill me about this design", "add telemetry", "open the inbox / what's waiting on me", "patrol <upstream repo / PRs / author>", "I'm closing the session / wrap up / save this session", "where were we on X" — whenever the user types /rosalbito or asks for a change that should end up as a verified pull request. Classifies the task by engineering risk and by human-decision dependency, routes it through understand → acceptance → plan → implement → verify → review → PR with deterministic evidence, persistent resumable state in .agent/, hard caps, and a loop driver that keeps working after the session ends. Overhead scales with the task: trivial tasks get near-zero ceremony.
 ---
 
 # /rosalbito — thin orchestrator
@@ -43,13 +43,20 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 | `/rosalbito dashboard` | if `curl -s localhost:7777/api/runs` answers, print `http://localhost:7777` (live). Else `dashboard.sh --open` (snapshot at `~/.rosalbito/dashboard.html`) and say `dashboard.sh --serve` / `--install-service` make it live. Stop. |
 | `/rosalbito understand [focus]` | §Understand mode. |
 | `/rosalbito grill [topic]` | §Grill mode. |
+| `/rosalbito inbox [sweep]` | read `references/inbox.md`; run its coordinator (or sweep) protocol in this context. An item with `context:` or "Earlier sessions on this thread": read that record first (`references/sessions.md` §Recall). |
+| `/rosalbito patrol [target] [since]` | `oss-detect.sh` (not OSS → say so, stop); read `references/oss.md`; run §patrol. |
+| `/rosalbito save [title]`, or Pedro says he's closing the session ("imma close this", "wrap up", "that's it for today") | read `references/sessions.md`; run §Save before replying. |
 | `/rosalbito <task>` | §1 Classify. |
 | no args, no run | ask for the task in one line; stop. |
 
 ## 1. Classify (two independent axes)
 
 Read `references/routing.md` once per run. Read `.agent/context/` (understanding, invariants,
-adr) if present — it is prior knowledge, use it. Decide:
+adr) if present — it is prior knowledge, use it. Run `oss-detect.sh`: exit 0 means an
+upstream repo Pedro contributes to — read `references/oss.md`; its delivery (inbox, not PR),
+vault and identity rules override §3 for the whole run. In OSS mode also run
+`session.sh find <upstream>` (and the thread url, if any): a hit is earlier work on the same
+ground, so read that record first (`references/sessions.md` §Recall). Decide:
 
 1. **Risk tier** `TRIVIAL | LOW | MEDIUM | HIGH | CRITICAL` from scope, uncertainty,
    security/data-integrity/production/financial relevance, reversibility, concurrency, DB.
@@ -131,6 +138,9 @@ opts in), push the feature branch, `gh pr create` per the global git rules with
 stay local. Then `finish-run.sh done --pr <url>`, print the completion block
 (`references/reports.md`, including the `Missing capability observed` line), and on its own line
 `<promise>ROSALBITO RUN FINISHED</promise>`. Blocked runs: blocked block + same promise.
+Before the promise, anything only Pedro can release (the PR to review, a `decision` or
+`hard_gate` block, an upstream post or reply) goes into the inbox with `inbox.sh add`
+(`references/inbox.md` §Writing an item), so the session can be closed.
 
 ## Understand mode — `/rosalbito understand [focus]`
 
