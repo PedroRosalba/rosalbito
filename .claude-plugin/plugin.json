@@ -2,11 +2,11 @@
   "name": "rosalbito",
   "description": "One command for every engineering task: /rosalbito classifies a task by risk and human dependency and drives it through an autonomous understand, plan, implement, verify, review loop to a verified pull request. Ships the companion telemetry skill and a PreToolUse guard hook.",
   "author": {
-    "name": "PedroRosalba",
-    "url": "https://github.com/PedroRosalba"
+    "name": "rosalbito",
+    "url": "https://github.com/rosalbito"
   },
-  "homepage": "https://github.com/PedroRosalba/rosalbito",
-  "repository": "https://github.com/PedroRosalba/rosalbito",
+  "homepage": "https://github.com/rosalbito/rosalbito-skills",
+  "repository": "https://github.com/rosalbito/rosalbito-skills",
   "license": "MIT",
   "keywords": [
     "engineering",

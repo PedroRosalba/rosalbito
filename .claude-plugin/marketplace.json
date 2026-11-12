@@ -1,8 +1,8 @@
 {
   "name": "rosalbito",
   "owner": {
-    "name": "PedroRosalba",
-    "url": "https://github.com/PedroRosalba"
+    "name": "rosalbito",
+    "url": "https://github.com/rosalbito"
   },
   "description": "Rosalbito: autonomous, verified engineering runs for Claude Code.",
   "plugins": [
