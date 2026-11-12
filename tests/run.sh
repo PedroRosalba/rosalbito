@@ -491,6 +491,223 @@ check "context override + path match (subdir)" 'bash "$O" "$TMP/oss/research/sub
 check "identity mismatch reported"              'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^identity_ok=0$"'
 rm .agent/context/oss.yaml
 
+echo "eval-candidates (fake gh)"
+E="$S/eval-candidates.sh"
+EVFIX="$TMP/evfix"; mkdir -p "$EVFIX/files" "$TMP/evalbin" "$TMP/evals/tasks/built"; export EVFIX
+cat > "$TMP/evalbin/gh" <<'EOF'
+#!/usr/bin/env bash
+# fake gh. `search prs`: $EVFIX/prs.jsonl, filtered by --repo. `api`: $EVFIX/files/<path>.json,
+# a list of pages: only --paginate gets past the first. EVFIX_BROKEN_REPO and EVFIX_GARBAGE break it.
+printf '%s\n' "$*" >> "$EVFIX/calls"
+if [ "$1" = search ]; then
+  shift 2; repo=""
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; *) shift ;; esac; done
+  [ -z "${EVFIX_BROKEN_REPO:-}" ] || [ "$repo" != "$EVFIX_BROKEN_REPO" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+  [ -z "${EVFIX_GARBAGE:-}" ] || { echo "<html>busy</html>"; exit 0; }
+  jq -s --arg r "$repo" 'map(select($r == "" or .repository.nameWithOwner == $r))' "$EVFIX/prs.jsonl"
+  exit 0
+fi
+shift; p="" q="." all=0
+while [ $# -gt 0 ]; do case "$1" in --paginate) all=1; shift ;; --jq) q="$2"; shift 2 ;; *) p="$1"; shift ;; esac; done
+f="$EVFIX/files/$(printf '%s' "${p%%\?*}" | tr / _).json"
+[ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+if [ $all -eq 1 ]; then jq -c '.[]' "$f" | while read -r page; do jq -r "$q" <<<"$page"; done
+else jq -c '.[0]' "$f" | jq -r "$q"; fi
+EOF
+chmod +x "$TMP/evalbin/gh"
+EC() { PATH="$TMP/evalbin:$PATH" ROSALBITO_EVALS_DIR="${EVDIR:-$TMP/evals}" bash "$E" "$@"; }
+evfile() { printf '%s' "$EVFIX/files/repos_$(printf '%s' "$1" | tr / _)_pulls_$2_files.json"; }
+evpr() {  # evpr <repo> <number> <title> <body> <path:additions[:deletions[:status]]>...
+  local r="$1" n="$2" t="$3" b="$4"; shift 4
+  jq -cn --arg r "$r" --argjson n "$n" --arg t "$t" --arg b "$b" \
+    '{repository:{nameWithOwner:$r}, number:$n, title:$t, body:$b, url:"https://github.com/\($r)/pull/\($n)"}' >> "$EVFIX/prs.jsonl"
+  jq -cn '[$ARGS.positional | map(split(":") | {filename:.[0], additions:(.[1] | tonumber), deletions:((.[2] // "0") | tonumber), status:(.[3] // "modified")})]' --args "$@" > "$(evfile "$r" "$n")"
+}
+many() { local i; for ((i=1;i<=$1;i++)); do printf 'src/f%s.rs:1 ' "$i"; done; }
+mkdir -p "$TMP/evals/tasks/quoted" "$TMP/evals/tasks/moved"
+printf 'source_pr = "https://github.com/o/r/pull/14"\n' > "$TMP/evals/tasks/built/task.toml"
+printf '[metadata]\n"source_pr" = '"'"'https://github.com/o/r/pull/18'"'"'\n' > "$TMP/evals/tasks/quoted/task.toml"
+printf 'source_pr = "http://GitHub.com/O/R/pull/19/files/"\n' > "$TMP/evals/tasks/moved/task.toml"
+printf 'https://github.com/o/r/pull/17\n' > "$TMP/evals/dropped.txt"
+evpr o/r 1 "Small fix" "No issue here." src/a.rs:10 tests/a.rs:5
+evpr o/r 2 "Medium fix" "" lib/b.go:100 lib/b_test.go:50
+evpr o/r 3 "Bonus fix" $'Some text.\r\n\r\nFixes #77\r\n' src/c.py:140 test_c.py:40
+evpr o/r 4 "Mentions only" "Prefixes #9 and mentions #10" src/d.ts:100 src/d.spec.ts:100
+evpr o/r 5 "Docs only" "" README.md:5 docs/guide.txt:5 CHANGELOG.rst:2 .changeset/x.txt:1 site/a.mdx:1
+evpr o/r 6 "Docs and tests, no code" "" docs/guide.txt:5 tests/a.rs:5
+evpr o/r 7 "Tests only" "" tests/x.rs:5 src/__tests__/y.js:5
+evpr o/r 8 "Code without tests" "" src/z.rs:5 tests/README.md:2
+evpr o/r 9 "One addition too many" "" src/big.rs:800 tests/big.rs:1
+evpr o/r 10 "One file too many" "" $(many 12) tests/m.rs:1
+evpr o/r 11 "Exactly at the limits" "" src/e.rs:780 $(many 10) tests/e.rs:10
+evpr o/r 12 "Huge lockfiles" "" Cargo.lock:5000 web/pnpm-lock.yaml:900 package-lock.json:1 yarn.lock:1 src/l.rs:10 src/l.test.ts:10
+evpr o/r 13 "Lockfile and tests, no code" "" package-lock.json:10 tests/y.rs:1
+evpr o/r 14 "Already built" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 140 "Longer number than a built one" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 15 $'Fix\ttabbed\ntitle' "" src/t.rs:30 tests/t.rs:30
+evpr o/r 16 "Oversized on page two" "" src/p.rs:1 tests/p.rs:1
+evpr o/r 17 "Dropped" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 18 "Built, quoted key" "" src/q.rs:1 tests/q.rs:1
+evpr o/r 19 "Built, untidy URL" "" src/q.rs:1 tests/q.rs:1
+evpr other/r 14 "Same repo and number, other owner" "" src/q.rs:1 tests/q.rs:1
+jq -c '. + [[{filename:"src/huge.rs", additions:5000, deletions:0, status:"added"}]]' "$(evfile o/r 16)" > "$EVFIX/pages" && mv "$EVFIX/pages" "$(evfile o/r 16)"
+out="$(EC --since 2026-10-01 --repo o/r)"; rc=$?
+col() { printf '%s\n' "$out" | tail -n +2 | cut -f"$1" | tr '\n' ' '; }
+row() { printf '%s\n' "$out" | awk -F'\t' -v n="$1" 'NR>1 && $3==n'; }
+check "exits 0 with the header first"           '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | head -1)" = "$(printf "score\trepo\tnumber\tadditions\tfiles\ttitle\turl")" ]'
+check "best first, excluded PRs gone"           '[ "$(col 3)" = "3 140 1 12 15 2 4 11 " ]'
+check "row has all seven columns in order"      '[ "$(row 3)" = "$(printf "820\to/r\t3\t180\t2\tBonus fix\thttps://github.com/o/r/pull/3")" ]'
+check "merged PRs since the date are searched"  'grep -- "^search prs --repo o/r --merged --merged-at >=2026-10-01 " "$EVFIX/calls" >/dev/null'
+check "docs-only excluded"                      '[ -z "$(row 5)" ]'
+check "docs do not count as code"               '[ -z "$(row 6)" ]'
+check "test-only excluded"                      '[ -z "$(row 7)" ]'
+check "code without tests excluded"             '[ -z "$(row 8)" ]'
+check "over max_additions excluded"             '[ -z "$(row 9)" ]'
+check "over max_files excluded"                 '[ -z "$(row 10)" ]'
+check "exactly at both limits stays, score 0"   '[ "$(row 11 | cut -f1,4,5)" = "$(printf "0\t800\t12")" ]'
+check "lockfiles ignored for the size limit"    '[ "$(row 12 | cut -f1,4,5)" = "$(printf "780\t20\t2")" ]'
+check "a lockfile is not code"                  '[ -z "$(row 13)" ]'
+check "already built excluded via source_pr"    '[ -z "$(row 14)" ]'
+check "source_pr match is exact, not a prefix"  '[ -n "$(row 140)" ] && [ -n "$(row 1)" ]'
+check "a PR in dropped.txt is excluded"         '[ -z "$(row 17)" ]'
+check "a quoted source_pr key is read"          '[ -z "$(row 18)" ]'
+check "an untidy source_pr URL still matches"   '[ -z "$(row 19)" ]'
+check "issue bonus beats a smaller PR"          '[ "$(row 3 | cut -f1)" -gt "$(row 140 | cut -f1)" ] && [ "$(row 3 | cut -f4)" -gt "$(row 140 | cut -f4)" ]'
+check "a # without a closing keyword: no bonus" '[ "$(row 4 | cut -f1)" = 600 ]'
+check "tabs and newlines in a title are safe"   '[ "$(row 15 | awk -F"\t" "{print NF}")" = 7 ] && [ "$(row 15 | cut -f6)" = "Fix tabbed title" ] && [ "$(row 15 | cut -f7)" = https://github.com/o/r/pull/15 ]'
+check "files are paginated"                     '[ -z "$(row 16)" ]'
+out="$(EC --since 2026-10-01 --repo other/r)"
+check "a different owner is not built"          '[ -n "$(row 14)" ]'
+: > "$EVFIX/calls"; EC --since 2026-10-01 --author somebody >/dev/null; rc=$?
+check "--author alone searches every repo"      '[ $rc -eq 0 ] && grep -- "^search prs --merged" "$EVFIX/calls" | grep -- "--author somebody" >/dev/null && ! grep -- "--repo" "$EVFIX/calls" >/dev/null'
+evpr t/b 1 "Tie" "" src/a.rs:1 tests/a.rs:1
+evpr t/a 10 "Tie" "" src/a.rs:1 tests/a.rs:1
+evpr t/a 9 "Tie" "" src/a.rs:1 tests/a.rs:1
+out="$(EC --since 2026-10-01 --repo t/b --repo t/a --repo t/a)"
+check "ties sort by repo, then number; no dupes" '[ "$(col 2 | tr -d " ")$(col 3)" = "t/at/at/b9 10 1 " ]'
+EVDIR="$TMP/no-such-dir" EC --since 2026-10-01 --repo o/r > "$TMP/evout"; rc=$?
+check "a missing evals dir excludes nothing"    '[ $rc -eq 0 ] && grep >/dev/null "/pull/14$" "$TMP/evout"'
+evlist() {  # evlist <repo> <fixed path> <path>...: one PR per path, each with the fixed file; prints the listed paths
+  local repo="$1" fixed="$2" p n=0; shift 2
+  for p in "$@"; do n=$((n+1)); evpr "$repo" "$n" "$p" "" "$fixed" "$p:1"; done
+  EC --since 2026-10-01 --repo "$repo" 2>/dev/null | tail -n +2 | cut -f6 | LC_ALL=C sort | tr '\n' ' '
+}
+sorted() { printf '%s\n' "$@" | LC_ALL=C sort | tr '\n' ' '; }
+TESTS=(a_test.py a-test.js a.test.ts a.spec.ts a_spec.rb test_a.py TEST_A.PY src/FooTest.java src/FooTests.swift src/tests.rs conftest.py src/a.snap
+  test/a.rs tests/a.rs src/__tests__/a.js Tests/A.swift testdata/a.bin spec/a.rb specs/a.rb e2e/a.ts src/__snapshots__/a.txt fixtures/a.json
+  src/spec/parser.rs src/test_utils.rs assets/fixtures/x.json)
+check "every test path and name counts as a test" '[ "$(evlist k/tests src/a.rs:1 "${TESTS[@]}")" = "$(sorted "${TESTS[@]}")" ]'
+NOTTESTS=(src/latest.js contest.py src/attest.rs README.rst config.yaml Cargo.toml package.json .github/workflows/ci.yml .github/workflows/test_x.yml docs/test_a.py tests/README.md)
+check "lookalikes, CI and config are not tests"  '[ -z "$(evlist k/nottests src/a.rs:1 "${NOTTESTS[@]}")" ]'
+CODES=(a.rs a.c a.cc a.cpp a.cxx a.c++ a.h a.hpp a.ts a.tsx a.js a.jsx a.mjs a.cjs a.py a.go a.java a.kt a.rb a.php a.swift a.zig A.PY)
+check "every source extension counts as code"    '[ "$(evlist k/codes tests/a.rs:1 "${CODES[@]}")" = "$(sorted "${CODES[@]}")" ]'
+NOTCODES=(README.rst config.yaml data.json Cargo.toml .github/workflows/ci.yml run.sh Makefile a.css src/FooTest.java)
+check "other files and tests are not code"       '[ -z "$(evlist k/notcodes tests/a.rs:1 "${NOTCODES[@]}")" ]'
+evpr c/c 1 "Other files are free" "" src/a.rs:1 tests/a.rs:1 data.json:5000 a.yaml:1 b.yaml:1 c.yaml:1 d.yaml:1 e.yaml:1 f.yaml:1 g.yaml:1 h.yaml:1 i.yaml:1 j.yaml:1 k.yaml:1
+evpr c/c 2 "Test removed" "" src/a.rs:1 tests/a.rs:0:50:removed
+evpr c/c 3 "Code removed" "" src/a.rs:0:50:removed tests/a.rs:1
+evpr c/c 4 "Deletes a lot, modified" "" src/a.rs:5:2000 tests/a.rs:1
+evpr c/c 5 "Deletes a lot, removed" "" src/a.rs:1 tests/a.rs:1 src/old.rs:0:2000:removed
+evpr c/c 6 "Deletions lower the score" "" src/a.rs:1:300 tests/a.rs:1
+evpr c/c 7 "Removed files still count" "" src/a.rs:1 tests/a.rs:1 src/old.rs:0:90:removed
+evpr c/c 8 "Removed docs count for nothing" "" src/a.rs:1 tests/a.rs:1 README.md:0:5000:removed
+evpr c/c 9 "Code renamed, 0/0" "" src/a.rs:0:0:renamed tests/a.rs:1
+evpr c/c 10 "Test renamed, 0/0" "" src/a.rs:1 tests/a.rs:0:0:renamed
+evpr c/c 11 "Test mode change only" "" src/a.rs:1 tests/run.py:0:0:changed
+evpr c/c 12 "Code mode change only" "" src/a.py:0:0:changed tests/a.py:1
+evpr c/c 13 "A rename beside a real change" "" src/a.rs:1 tests/a.rs:1 src/moved.rs:0:0:renamed
+evpr c/c 14 "A rename with edits counts" "" src/a.rs:1:1:renamed tests/a.rs:1:1:renamed
+out="$(EC --since 2026-10-01 --repo c/c)"
+check "other files don't count towards the limits" '[ "$(row 1 | cut -f1,4,5)" = "$(printf "798\t2\t2")" ]'
+check "a removed test doesn't qualify a PR"     '[ -z "$(row 2)" ]'
+check "removed code doesn't qualify a PR"       '[ -z "$(row 3)" ]'
+check "deletions count towards max_additions"   '[ -z "$(row 4)" ] && [ -z "$(row 5)" ]'
+check "deletions lower the score, not additions" '[ "$(row 6 | cut -f1,4)" = "$(printf "498\t2")" ]'
+check "removed code still counts in the diff"   '[ "$(row 7 | cut -f1,4,5)" = "$(printf "708\t2\t3")" ]'
+check "removed docs still count for nothing"    '[ "$(row 8 | cut -f1)" = 798 ]'
+check "a 0/0 rename doesn't qualify a PR"       '[ -z "$(row 9)" ] && [ -z "$(row 10)" ]'
+check "a mode-only change doesn't qualify a PR" '[ -z "$(row 11)" ] && [ -z "$(row 12)" ]'
+check "a 0/0 file doesn't count for the row"    '[ "$(row 13 | cut -f1,4,5)" = "$(printf "798\t2\t2")" ]'
+check "a rename with edits still qualifies"     '[ "$(row 14 | cut -f1,4,5)" = "$(printf "796\t2\t2")" ]'
+BODY=$'<!-- Fixes #1 -->\r\nNothing to see.'; evpr b/b 1 "Comment only" "$BODY" src/a.rs:1 tests/a.rs:1
+BODY=$'<!-- template\nCloses #1\n-->\nCloses #2'; evpr b/b 2 "Comment, then a real one" "$BODY" src/a.rs:1 tests/a.rs:1
+evpr b/b 3 "Negated" "This does not fix #1" src/a.rs:1 tests/a.rs:1
+evpr b/b 4 "Contraction" "This doesn't close #1" src/a.rs:1 tests/a.rs:1
+evpr b/b 5 "Bold" "**Fixes** #8" src/a.rs:1 tests/a.rs:1
+evpr b/b 6 "Negated, then real" "Doesn't fix #1 but fixes #2" src/a.rs:1 tests/a.rs:1
+evpr b/b 7 "Word starting with not" "Notably fixes #2" src/a.rs:1 tests/a.rs:1
+out="$(EC --since 2026-10-01 --repo b/b)"
+check "a keyword in an HTML comment earns nothing" '[ "$(row 1 | cut -f1)" = 798 ]'
+check "stripping a comment keeps a real keyword" '[ "$(row 2 | cut -f1)" = 998 ]'
+check "not / n't before a keyword earns nothing" '[ "$(row 3 | cut -f1)" = 798 ] && [ "$(row 4 | cut -f1)" = 798 ]'
+check "**Fixes** #8 earns the bonus"            '[ "$(row 5 | cut -f1)" = 998 ]'
+check "a real keyword beside a negated one counts" '[ "$(row 6 | cut -f1)" = 998 ] && [ "$(row 7 | cut -f1)" = 998 ]'
+: > "$EVFIX/calls"
+for u in https://github.com/o/r/pull/14 http://github.com/o/r/pull/14 github.com/o/r/pull/14 HTTPS://GitHub.com/O/R/PULL/14 \
+  https://github.com/o/r/pull/14/ https://github.com/o/r/pull/14/files "https://github.com/o/r/pull/14#issuecomment-1" \
+  "https://github.com/o/r/pull/14?w=1" https://github.com/o/r/pull/17 https://github.com/o/r/pull/18 https://github.com/o/r/pull/19; do
+  EC --built "$u" || fail "--built should find $u"
+done
+check "--built finds every form of a built or dropped URL" '[ ! -s "$EVFIX/calls" ]'
+EC --built https://github.com/o/r/pull/1; rc=$?
+check "--built exits 1 for a PR not built"      '[ $rc -eq 1 ]'
+EC --built https://github.com/o/r/pull/140; rc=$?
+check "--built does not match a prefix"         '[ $rc -eq 1 ]'
+EC --built https://github.com/o/other/pull/14; rc=$?
+check "--built keeps the repo name in the key"  '[ $rc -eq 1 ]'
+EC --built https://github.com/other/r/pull/14; rc=$?
+check "--built keeps the owner in the key"      '[ $rc -eq 1 ]'
+EVDIR="$TMP/no-such-dir" EC --built https://github.com/o/r/pull/14; rc=$?
+check "--built with no evals dir: not built"    '[ $rc -eq 1 ]'
+EC --built https://github.com/o/r/issues/14 2>/dev/null; rc=$?
+check "--built on a non-PR URL exits 2"         '[ $rc -eq 2 ]'
+EC --built https://github.com/o/r/pull/14 --since 2026-10-01 2>/dev/null; rc=$?
+check "--built takes no other flags"            '[ $rc -eq 2 ]'
+EC --since 2026-10-01 --repo 'cloudflare/*' 2>"$TMP/everr"; rc=$?
+check "a * in --repo exits 2 with a clear message" '[ $rc -eq 2 ] && grep >/dev/null "not a pattern" "$TMP/everr" && [ ! -s "$EVFIX/calls" ]'
+EC --repo o/r --repo '*/x' 2>/dev/null; rc=$?
+check "a * in any --repo exits 2 before anything else" '[ $rc -eq 2 ]'
+for ((i=1;i<=30;i++)); do evpr p/q "$i" "Progress" "" src/a.rs:1 tests/a.rs:1; done
+out="$(EC --since 2026-10-01 --repo p/q 2>"$TMP/everr")"; rc=$?
+check "progress on stderr every 25 PRs"         '[ $rc -eq 0 ] && [ "$(cat "$TMP/everr")" = "rosalbito: checked 25 of 30 PRs" ] && [ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" -eq 31 ]'
+mkdir -p .agent/context && printf 'evals_dir: %s\nmax_additions: 20\nmax_files: 2\n' "$TMP/evals" > .agent/context/evals.yaml
+out="$(PATH="$TMP/evalbin:$PATH" bash "$E" --since 2026-10-01 --repo o/r)"
+check "limits and evals_dir come from the config" '[ "$(col 3)" = "140 1 12 " ]'
+rm .agent/context/evals.yaml
+out="$(EVFIX_BROKEN_REPO=o/r EC --since 2026-10-01 --repo o/r 2>"$TMP/everr")"; rc=$?
+check "gh failure exits non-zero, no table"     '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "gh search prs failed" "$TMP/everr"'
+out="$(EVFIX_BROKEN_REPO=t/a EC --since 2026-10-01 --repo t/b --repo t/a 2>/dev/null)"; rc=$?
+check "one failing repo fails the whole run"    '[ $rc -ne 0 ] && [ -z "$out" ]'
+out="$(EVFIX_GARBAGE=1 EC --since 2026-10-01 --repo o/r 2>/dev/null)"; rc=$?
+check "gh output that is not JSON is a failure" '[ $rc -ne 0 ] && [ -z "$out" ]'
+evpr u/v 1 "Files fail" "" src/a.rs:1 tests/a.rs:1; rm "$(evfile u/v 1)"
+out="$(EC --since 2026-10-01 --repo u/v 2>"$TMP/everr")"; rc=$?
+check "failure fetching files exits non-zero"   '[ $rc -ne 0 ] && [ -z "$out" ] && grep >/dev/null "pull/1" "$TMP/everr"'
+: > "$EVFIX/calls"
+check "no arguments exit non-zero"              '! EC >/dev/null 2>&1'
+check "--since alone exits non-zero"            '! EC --since 2026-10-01 >/dev/null 2>&1'
+check "--repo without --since exits non-zero"   '! EC --repo o/r >/dev/null 2>&1'
+check "a malformed date exits non-zero"         '! EC --since 10/01/2026 --repo o/r >/dev/null 2>&1'
+check "a flag without a value exits non-zero"   '! EC --repo o/r --since >/dev/null 2>&1'
+check "an unknown flag exits non-zero"          '! EC --since 2026-10-01 --repo o/r --bogus x >/dev/null 2>&1'
+check "bad arguments never reach gh"            '[ ! -s "$EVFIX/calls" ]'
+EC 2>/dev/null; rc=$?
+check "bad arguments exit 2"                    '[ $rc -eq 2 ]'
+check "--help prints the usage"                 'bash "$E" --help | grep >/dev/null "^#   eval-candidates.sh --since"'
+out="$(EC --since 2099-01-01 --repo empty/repo)"; rc=$?
+check "no PRs: header only, exit 0"             '[ $rc -eq 0 ] && [ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" -eq 1 ]'
+EVI="$TMP/evinbox/inbox"; EVR="$TMP/evals/reports/x.md"
+ei=$(ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" add --kind decide --priority P2 --link "$EVR" --title "Eval draft" < <(pw x))
+ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" add --kind decide --link "$EVR" --title "Eval draft" < <(pw x) >/dev/null
+PATH="$TMP/evalbin:$PATH" ROSALBITO_INBOX="$EVI" ROSALBITO_GH_LOGIN=pedro bash "$S/inbox.sh" refresh >/dev/null
+check "an item linked to the report survives refresh and re-adds" '[ -f "$EVI/$ei.md" ] && [ "$(ls "$EVI" | wc -l | tr -d " ")" -eq 1 ]'
+ROSALBITO_INBOX="$EVI" bash "$S/inbox.sh" close "$ei" dropped >/dev/null
+check "a dropped eval item leaves the inbox"    '[ ! -f "$EVI/$ei.md" ] && grep >/dev/null "^outcome: dropped$" "$TMP/evinbox/archive/$ei.md" && grep >/dev/null "^status: dropped$" "$TMP/evinbox/archive/$ei.md"'
+check "the protocol never links the merged PR"  'grep >/dev/null -- "--link <abs path to reports" "$SKILL_DIR/references/evals.md"'
+check "patrol: eval drafts, then the chat report" 'grep >/dev/null "^7\. \*\*Eval drafts" "$SKILL_DIR/references/oss.md" && grep >/dev/null "^8\. \*\*Report" "$SKILL_DIR/references/oss.md"'
+check "inbox points at the eval answer section" 'grep >/dev/null "§After Pedro answers" "$SKILL_DIR/references/inbox.md" && grep >/dev/null "^## After Pedro answers" "$SKILL_DIR/references/evals.md"'
+unset EVFIX
+
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
 check "standalone install.sh in a throwaway HOME" 'bash "$HERE/tests/standalone-install.sh" >/dev/null 2>&1'

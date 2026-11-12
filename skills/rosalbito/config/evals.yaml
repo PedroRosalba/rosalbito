@@ -1,0 +1,8 @@
+# Eval drafts from merged PRs (see references/evals.md). Override per repo in .agent/context/evals.yaml.
+
+evals_dir: ~/Projects/pr-evals
+max_drafts_per_patrol: 2
+
+# eval-candidates.sh leaves out a PR above these limits (code plus tests, lockfiles ignored).
+max_additions: 800
+max_files: 12

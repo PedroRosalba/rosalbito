@@ -58,7 +58,10 @@ have PRs, issues or comments in). `since`: default = date of the last patrol rep
 6. **Fill the inbox**: one `read` item for the report (P2 if anything in it touches our work,
    else P3), plus a `review-comment` / `ship-pr` / `decide` item for every action, each with
    its drafted text. Post nothing.
-7. **Report** in chat: the picture, the counts, `/rosalbito inbox` as the next step.
+7. **Eval drafts**: turn the window's good merged PRs into eval drafts, while they are fresh:
+   read `references/evals.md`; run it for the repos this patrol collected and `since`. Local only.
+8. **Report** in chat: the picture, the counts (eval drafts built, skipped and why, any failure),
+   `/rosalbito inbox` as the next step.
 
 ## `/rosalbito <task>` in an OSS repo
 

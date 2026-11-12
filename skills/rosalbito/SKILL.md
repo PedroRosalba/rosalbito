@@ -45,6 +45,7 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 | `/rosalbito grill [topic]` | §Grill mode. |
 | `/rosalbito inbox [sweep]` | read `references/inbox.md`; run its coordinator (or sweep) protocol in this context. An item with `context:` or "Earlier sessions on this thread": read that record first (`references/sessions.md` §Recall). |
 | `/rosalbito patrol [target] [since]` | `oss-detect.sh` (not OSS → say so, stop); read `references/oss.md`; run §patrol. |
+| `/rosalbito eval <pr-url \| --since date>` | read `references/evals.md`; run it. |
 | `/rosalbito save [title]`, or Pedro says he's closing the session ("imma close this", "wrap up", "that's it for today") | read `references/sessions.md`; run §Save before replying. |
 | `/rosalbito <task>` | §1 Classify. |
 | no args, no run | ask for the task in one line; stop. |
@@ -166,6 +167,8 @@ what `/grill-with-docs` does) and interview Pedro until the frontier is empty. T
 ## 4. Hard gates (mechanisms, not sentences)
 
 - All code lands as PRs on feature branches; merging is Pedro's approval. Never `gh pr merge`.
+  The feature-branch rule doesn't apply in `evals_dir` (`config/evals.yaml`), a local-only repo where
+  eval drafts commit to main and nothing is pushed.
 - `hooks/rosalbito-guard.sh` (PreToolUse, registered by the plugin or by `install.sh`) denies force-push,
   pushes to main/master, `--prod` deploys, destructive SQL, `rm -rf` on roots, prod
   credentials, `gh pr merge`. A denied command that is genuinely required is a `hard_gate`
