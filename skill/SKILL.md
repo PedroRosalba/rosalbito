@@ -21,6 +21,7 @@ Run them with bash from the target repo root. Every script prints `--help`.
                   glossary/CONTEXT.md, adr/, telemetry/, invariants.md, config overrides
 .agent/runs/      ephemeral: what happened — runs/<run_id>/{state.md,acceptance.yaml,
                   evidence.jsonl,reports/}, runs/current -> active run, runs/metrics.jsonl
+~/.rosalbito/     cross-repo index (collect.sh) and dashboard.html — local, never pushed
 ```
 
 Runs **read** `context/` and **write** `runs/`; durable learnings (decisions, glossary
@@ -39,6 +40,7 @@ bash SKILL_DIR/scripts/state.sh show        # exits 1 if no run exists
 |---|---|
 | active run (`status` not `done\|blocked`) | **Resume**: read `runs/current/state.md` fully, `caps-check.sh`, `start-loop.sh` (re-arm for this session), continue from `next_action`. Don't re-classify or re-plan unless `next_action` says so. Don't trust a dead session's claims: re-verify before advancing. |
 | `/rosalbito status` | print `state.sh show` + `evidence-summary.sh`; stop. |
+| `/rosalbito dashboard` | if `curl -s localhost:7777/api/runs` answers, print `http://localhost:7777` (live). Else `dashboard.sh --open` (snapshot at `~/.rosalbito/dashboard.html`) and say `dashboard.sh --serve` / `--install-service` make it live. Stop. |
 | `/rosalbito understand [focus]` | §Understand mode. |
 | `/rosalbito grill [topic]` | §Grill mode. |
 | `/rosalbito <task>` | §1 Classify. |
@@ -123,7 +125,7 @@ implementation is wrong*. HIGH/CRITICAL reviewers re-run the checks. Use `/code-
 
 **Document and deliver**: `classify-paths.sh` on the real diff (upgrade if the floor rose).
 Report: TRIVIAL/LOW → PR paragraph; HIGH+ → `runs/<id>/reports/report.md` from
-`templates/report.md`. Commit the code only (`.agent/` is excluded; `ROSALBITO_COMMIT_AGENT_DIR=1`
+`templates/report.md` (`finish-run.sh done` refuses a HIGH+ run without it). Commit the code only (`.agent/` is excluded; `ROSALBITO_COMMIT_AGENT_DIR=1`
 opts in), push the feature branch, `gh pr create` per the global git rules with
 `templates/pr-body.md` — the evidence table and decision *summaries* go in the body, the files
 stay local. Then `finish-run.sh done --pr <url>`, print the completion block
@@ -167,6 +169,10 @@ what `/grill-with-docs` does) and interview Pedro until the frontier is empty. T
 `max_same_failure: 3`), enforced by `caps-check.sh`. Hitting a cap → blocked report. Never
 continue indefinitely. Spend model calls where they buy independent evidence (fresh reviews,
 adversarial tests, clean-context debugging, exploration); waste is repeating failed reasoning.
+Name every subagent's Agent `description` `[role] what it does`, role one of `implementer`,
+`review:security`, `review:correctness`, `review:architecture`, `review:other`, `explorer`,
+`planner`, `debugger`, `tester`, `writer`: `usage.sh` reads Claude Code's transcripts after
+the run and attributes tokens and cost per role from that tag. Never count your own tokens.
 Never return the transcript; return the report. If a run needed a reusable engineering
 capability that no installed skill provides, say so in the completion block's
 `Missing capability observed` line — a report field, not a framework. Build nothing until a

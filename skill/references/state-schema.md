@@ -17,7 +17,8 @@
     <run_id>/evidence.jsonl          verification results (verify.sh)
     <run_id>/reports/                engineering report, blocked report
     adhoc.jsonl                      evidence recorded outside a run
-    metrics.jsonl                    one line per finished run (metrics.sh)
+    metrics.jsonl                    one line per finished run (metrics.sh, with usage block)
+~/.rosalbito/                cross-repo, local: repos (registry), runs.jsonl (collect.sh), dashboard.html
 ```
 
 Runs read `context/` and write `runs/`. Durable learnings produced by a run (decisions,
@@ -44,7 +45,9 @@ has a real `CONTEXT.md` or `docs/adr/`, they are left alone (repo-owned) and rep
 | human_required, human_level | axis 2 |
 | status | classifying · understanding · acceptance · planning · implementing · verifying · reviewing · documenting · pr · done · blocked |
 | iteration | bumped per loop re-entry (`state.sh bump`) |
-| started_at, updated_at | UTC ISO |
+| started_at, updated_at, finished_at | UTC ISO (`finished_at` set by finish-run.sh) |
+| sessions | Claude Code session ids that worked on the run (init-run, caps-check on resume) |
+| harness_version | rosalbito commit the run started on: compare runs across harness versions |
 | driver | ralph-loop · none |
 | acceptance, evidence | paths |
 | pr | URL once opened |

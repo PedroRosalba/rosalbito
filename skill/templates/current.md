@@ -12,6 +12,9 @@ status: classifying
 iteration: 1
 started_at: __STARTED_AT__
 updated_at: __STARTED_AT__
+finished_at: ""
+sessions: "__SESSIONS__"
+harness_version: __HARNESS__
 driver: none
 acceptance: .agent/runs/__RUN_ID__/acceptance.yaml
 evidence: .agent/runs/__RUN_ID__/evidence.jsonl

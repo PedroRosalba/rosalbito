@@ -71,6 +71,8 @@ sed -e "s|__RUN_ID__|$RUN_ID|g" \
     -e "s|__HUMAN_REQUIRED__|$HUMAN_REQUIRED|g" \
     -e "s|__HUMAN_LEVEL__|$HUMAN|g" \
     -e "s|__STARTED_AT__|$STARTED|g" \
+    -e "s|__SESSIONS__|${CLAUDE_CODE_SESSION_ID:-}|g" \
+    -e "s|__HARNESS__|$(git -C "$SKILL_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)|g" \
     "$SKILL_DIR/templates/current.md" > "$RUN_DIR/state.md"
 
 # acceptance contracts are MEDIUM+ ceremony; LOW/TRIVIAL runs do not get an empty one to fill
@@ -79,6 +81,7 @@ if [ "$(tier_rank "$RISK")" -ge 2 ]; then
       "$SKILL_DIR/templates/acceptance.yaml" > "$RUN_DIR/acceptance.yaml"
 fi
 : > "$RUN_DIR/evidence.jsonl"
+register_repo
 
 echo "run_id=$RUN_ID"
 echo "run_dir=$RUN_DIR"
