@@ -4,7 +4,8 @@
 # Denies operations that must never happen autonomously, regardless of model confidence:
 #   force-push, push to main/master, merging PRs, --prod deploys, destructive SQL,
 #   rm -rf on roots/home/.git, infra destroy/apply, production credentials.
-# Installed into ~/.claude/settings.json by install.sh. Reads the hook JSON on stdin.
+# Registered by the plugin (hooks/hooks.json) or, standalone, in ~/.claude/settings.json by
+# install.sh. Reads the hook JSON on stdin.
 # A denied command is a hard_gate decision for Pedro, not something to work around.
 set -uo pipefail
 INPUT="$(cat)"

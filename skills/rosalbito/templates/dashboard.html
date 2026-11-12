@@ -432,7 +432,7 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
     const runs = filtered();
     status();
     tiles(runs); flags(runs); chartRuns(runs); chartKinds(runs); tableRoles(runs); tableRuns(runs); tableTools(runs);
-    $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skill/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
+    $('footer').textContent = `Cost is API-equivalent at list prices as of ${RAW.pricing_as_of || '?'} (skills/rosalbito/config/pricing.json); on a subscription it is a comparison figure, not the bill. Source: ${RAW.index || '~/.rosalbito/runs.jsonl'}${RAW.live ? `, refreshed every ${RAW.refresh_seconds}s by the dashboard server` : ', rebuilt by dashboard.sh'}. Local only.`;
   }
   render();
 })();

@@ -56,8 +56,8 @@ started_at: "$(now_iso)"
 Continue the Rosalbito run $RUN_ID in this repository.
 
 1. Read .agent/runs/current/state.md first. It is the only source of truth about this run. Durable repo knowledge is in .agent/context/.
-2. Run \`bash SKILL_DIR/scripts/caps-check.sh\` (SKILL_DIR = the rosalbito skill directory). If it exits non-zero, write the blocked report and finish the run as blocked.
-3. Continue from \`next_action\`. Record every check through verify.sh. Keep current.md truthful: status, next_action, log.
+2. Run \`bash "$SKILL_DIR/scripts/caps-check.sh"\` (the rosalbito skill directory is $SKILL_DIR). If it exits non-zero, write the blocked report and finish the run as blocked.
+3. Continue from \`next_action\`. Record every check through \`bash "$SKILL_DIR/scripts/verify.sh" <label> '<command>'\`. Keep current.md truthful: status, next_action, log.
 4. When the run reaches status done or blocked (finish-run.sh has been called and the final report printed), output exactly: <promise>$PROMISE</promise>
 
 Do not restart classification or planning unless next_action says so. Do not return the transcript; return the report.
