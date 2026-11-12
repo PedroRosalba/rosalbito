@@ -1,0 +1,9 @@
+# Machine pruning (scripts/prune.sh). Machine-wide, not per repo:
+# override any key in $ROSALBITO_HOME/prune.yaml (~/.rosalbito/prune.yaml).
+
+interval_days: 7        # --auto prunes at most this often...
+min_free_gb: 20         # ...or sooner (at most every 6h) while free disk is under this
+stale_days: 14          # node_modules / cargo target/ of projects with no file touched in this many days
+tmp_stale_days: 3       # Claude Code scratch dirs (/tmp/claude-<uid>/*) untouched this long
+roots: ""               # space-separated dirs to scan for projects (~ allowed);
+                        # empty = the parent dirs of the repos rosalbito has worked in ($ROSALBITO_HOME/repos)

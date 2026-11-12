@@ -14,6 +14,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export ROSALBITO_HOME="$TMP/.rosalbito" CLAUDE_PROJECTS_DIR="$TMP/.projects"   # never touch the real index or transcripts
+export ROSALBITO_PRUNE=0   # init-run must not prune the real machine's caches
 unset CLAUDE_CODE_SESSION_ID
 cd "$TMP" && git init -q -b main . 2>/dev/null || git init -q .
 git config user.email t@t; git config user.name t
@@ -490,6 +491,54 @@ mkdir -p .agent/context && printf 'vault: %s\ninbox: oss/inbox\ngit_identity: P 
 check "context override + path match (subdir)" 'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^vault_dir=$TMP/v/research$"'
 check "identity mismatch reported"              'bash "$O" "$TMP/oss/research/sub" | grep >/dev/null "^identity_ok=0$"'
 rm .agent/context/oss.yaml
+
+echo "prune (artifacts and tmp only: caches are the real machine's)"
+# outside $TMP (a git repo, so every project in it would look fresh); resolved, as --root resolves
+PRB="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP" "$PRB"' EXIT
+P="$S/prune.sh"; PR="$PRB/prune"; export ROSALBITO_CLAUDE_TMP="$TMP/ctmp"
+old() { find "$@" -exec touch -t 202001010000 {} +; }
+mkdir -p "$PR/old/node_modules/x" "$PR/old/target/debug" "$PR/new/node_modules/y" "$PR/notcargo/target" "$PR/fixture/node_modules/z"
+for p in old new fixture; do echo '{}' > "$PR/$p/package.json"; done
+echo bin > "$PR/old/node_modules/x/i.js"; echo o > "$PR/old/target/debug/a.o"; touch "$PR/old/target/CACHEDIR.TAG"
+echo bin > "$PR/new/node_modules/y/i.js"; echo o > "$PR/notcargo/target/out.txt"; echo f > "$PR/fixture/node_modules/z/i.js"
+(cd "$PR/fixture" && git init -q . && git add . && git -c user.email=t@t -c user.name=t commit -qm fixture)
+old "$PR/old" "$PR/notcargo" "$PR/fixture"
+mkdir -p "$TMP/ctmp/old-sess" "$TMP/ctmp/new-sess"; echo x > "$TMP/ctmp/old-sess/f"; echo y > "$TMP/ctmp/new-sess/f"; old "$TMP/ctmp/old-sess"
+out="$(bash "$P" --only artifacts --root "$PR" 2>&1)"
+check "dry run lists stale node_modules and target" 'echo "$out" | grep >/dev/null "would free .*$PR/old/node_modules$" && echo "$out" | grep >/dev/null "would free .*$PR/old/target$"'
+check "dry run deletes nothing"                 '[ -d "$PR/old/node_modules" ] && [ -d "$PR/old/target" ]'
+check "fresh, non-cargo and git-tracked are not listed" '! echo "$out" | grep >/dev/null -e "$PR/new/" -e "$PR/notcargo/" -e "$PR/fixture/"'
+bash "$P" --apply --only artifacts --root "$PR" >/dev/null 2>&1
+check "--apply removes only the stale artifacts" '[ ! -e "$PR/old/node_modules" ] && [ ! -e "$PR/old/target" ] && [ -f "$PR/old/package.json" ] && [ -d "$PR/new/node_modules" ] && [ -d "$PR/notcargo/target" ] && [ -d "$PR/fixture/node_modules" ]'
+check "--apply logs and stamps"                 'jq -e ".mode==\"apply\" and .items==2 and .freed_kb>0" <(tail -1 "$ROSALBITO_HOME/prune.jsonl") >/dev/null && [ -s "$ROSALBITO_HOME/prune.last" ]'
+bash "$P" --apply --only tmp >/dev/null 2>&1
+check "tmp: old Claude scratch goes, recent stays" '[ ! -e "$TMP/ctmp/old-sess" ] && [ -f "$TMP/ctmp/new-sess/f" ]'
+reset_old_sess() { mkdir -p "$TMP/ctmp/old-sess" && echo x > "$TMP/ctmp/old-sess/f" && old "$TMP/ctmp/old-sess"; }
+reset_old_sess; date +%s > "$ROSALBITO_HOME/prune.last"
+ROSALBITO_PRUNE=1 bash "$P" --auto --only tmp >/dev/null 2>&1
+check "--auto: no-op right after a prune"        '[ -e "$TMP/ctmp/old-sess" ]'
+echo $(( $(date +%s) - 8*86400 )) > "$ROSALBITO_HOME/prune.last"
+bash "$P" --auto --only tmp >/dev/null 2>&1
+check "--auto: ROSALBITO_PRUNE=0 is off"         '[ -e "$TMP/ctmp/old-sess" ]'
+ROSALBITO_PRUNE=1 bash "$P" --auto --only tmp >/dev/null 2>&1
+check "--auto: prunes once interval_days passed" '[ ! -e "$TMP/ctmp/old-sess" ] && [ "$(tail -1 "$ROSALBITO_HOME/prune.jsonl" | jq -r .mode)" = auto ]'
+printf 'min_free_gb: 999999999\n' > "$ROSALBITO_HOME/prune.yaml"
+reset_old_sess; echo $(( $(date +%s) - 3600 )) > "$ROSALBITO_HOME/prune.last"
+ROSALBITO_PRUNE=1 bash "$P" --auto --only tmp >/dev/null 2>&1
+check "--auto: low disk still waits 6h"          '[ -e "$TMP/ctmp/old-sess" ]'
+echo $(( $(date +%s) - 7*3600 )) > "$ROSALBITO_HOME/prune.last"
+ROSALBITO_PRUNE=1 bash "$P" --auto --only tmp >/dev/null 2>&1
+check "--auto: low disk prunes before interval"  '[ ! -e "$TMP/ctmp/old-sess" ]'
+rm "$ROSALBITO_HOME/prune.yaml"
+git init -q --bare "$TMP/prune-remote.git"
+(cd "$PR" && git clone -q "$TMP/prune-remote.git" main 2>/dev/null && cd main && echo a > a \
+  && git add a && GIT_COMMITTER_DATE=2020-01-01T00:00:00 git -c user.email=t@t -c user.name=t commit -qm a --date=2020-01-01T00:00:00 \
+  && git push -q -u origin HEAD 2>/dev/null && git worktree add -q -b wt "$PR/wt" && git -C "$PR/wt" push -q -u origin wt 2>/dev/null)
+out="$(bash "$P" --apply --only tmp --root "$PR" 2>&1)"
+check "idle clean pushed worktree is only suggested" 'echo "$out" | grep >/dev/null "worktree remove $PR/wt$" && [ -f "$PR/wt/a" ]'
+check "--only rejects an unknown class"         '! bash "$P" --only everything >/dev/null 2>&1'
+check "init-run starts the auto prune unless off" 'grep >/dev/null "ROSALBITO_PRUNE:-1}\" = 0 ] || (nohup bash \"\$SKILL_DIR/scripts/prune.sh\" --auto" "$S/init-run.sh"'
+unset ROSALBITO_CLAUDE_TMP
 
 echo "packaging (for details run each script directly)"
 check "plugin hook: guard via hooks/hooks.json"  'bash "$HERE/tests/plugin-hook.sh" >/dev/null 2>&1'
